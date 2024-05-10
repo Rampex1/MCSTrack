@@ -1,4 +1,5 @@
 from cv2 import aruco
+import numpy as np
 
 from src.pose_solver.pose_solver import \
     ImagePointSetsKey, \
@@ -49,6 +50,23 @@ DETECTOR_GREEN_INTRINSICS: Final[IntrinsicParameters] = IntrinsicParameters(
 marker_corners_dict = {}
 target_markers_list = []
 
+def scale_value(old_value, old_min, old_max, new_min, new_max):
+    return ((old_value - old_min) / (old_max - old_min)) * (new_max - new_min) + new_min
+
+def adjust_tvec(tvec):
+    x = scale_value(tvec[0], -220, 220, -0.5, 0.45)
+    y = scale_value(tvec[1], -171, 171, -0.5, 0.2)
+    z = 1
+    return np.array([x, y, z], dtype=np.float32)
+
+def draw_axes_on_marker(frame, camera_matrix, dist_coeffs, rvec, tvec, marker_length=0.1):
+    """
+    Draw 3D axes on the marker given the rotation vector, translation vector, and camera parameters.
+    """
+    # Draw the axes on the frame at the detected marker
+    return cv2.drawFrameAxes(frame, camera_matrix, dist_coeffs, rvec, tvec, marker_length)
+
+
 def detect_aruco_from_camera(pose_solver):
 
     ### OPENCV SETUP ###
@@ -88,7 +106,7 @@ def detect_aruco_from_camera(pose_solver):
             ### ADD MARKER CORNERS ###
             for i, corner in enumerate(corners):
                 marker_corners = MarkerCorners(
-                    detector_label='default_camera',
+                    detector_label=DETECTOR_GREEN_NAME,
                     marker_id=int(ids[i][0]),
                     points=corner[0].tolist(),
                     timestamp=datetime.datetime.now()
@@ -111,6 +129,37 @@ def detect_aruco_from_camera(pose_solver):
                                      tuple(map(int, topleft_corner)), (0, 255, 0), 2)
                 """
 
+            pose_solver.update()
+
+
+            detector_poses, target_poses = pose_solver.get_poses()
+            #print("Detector Poses:", detector_poses)
+            #print("Target Poses:", target_poses)
+
+            camera_matrix = np.array([
+                [DETECTOR_GREEN_INTRINSICS.focal_length_x_px, 0, DETECTOR_GREEN_INTRINSICS.optical_center_x_px],
+                [0, DETECTOR_GREEN_INTRINSICS.focal_length_y_px, DETECTOR_GREEN_INTRINSICS.optical_center_y_px],
+                [0, 0, 1]], dtype=float)
+            dist_coeffs = np.array(
+                DETECTOR_GREEN_INTRINSICS.radial_distortion_coefficients + DETECTOR_GREEN_INTRINSICS.tangential_distortion_coefficients)
+
+            for pose in target_poses:
+                # R R R T
+                # R R R T
+                # R R R T
+                # 0 0 0 1
+
+                matrix_values = pose.object_to_reference_matrix.values
+                matrix_4x4 = np.array(matrix_values).reshape(4, 4)
+                rvec, _ = cv2.Rodrigues(matrix_4x4[:3, :3])
+
+                # NOTE: tvec is rescaled so it can be shown on screen
+                tvec = matrix_4x4[:3, 3]
+                adjusted_tvec = adjust_tvec(tvec)
+
+                frame = draw_axes_on_marker(frame, camera_matrix, dist_coeffs, rvec, adjusted_tvec)
+                #frame = draw_axes_on_marker(frame, camera_matrix, dist_coeffs, rvec, tvec = np.array([0,0,0.5], dtype=np.float32).reshape(3, 1))
+
 
         # Display the resulting frame
         cv2.imshow('Frame with ArUco markers', frame)
@@ -122,11 +171,6 @@ def detect_aruco_from_camera(pose_solver):
     # When everything done, release the capture
     cap.release()
     cv2.destroyAllWindows()
-
-    # GET POSES
-    detector_poses, target_poses = pose_solver.get_poses()
-    print("Detector Poses:", detector_poses)
-    print("Target Poses:", target_poses)
 
 pose_solver = PoseSolver()
 

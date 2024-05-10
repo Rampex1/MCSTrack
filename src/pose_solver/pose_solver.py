@@ -926,6 +926,8 @@ class PoseSolver:
             self._poses_by_detector_label[detector_label] = Matrix4x4.from_numpy_array(detector_to_reference_opengl)
             image_point_set_keys_with_reference_visible.append(image_point_sets_key)
 
+        #print(self._poses_by_detector_label)
+
         # Code beyond this point is for tracking targets other than the reference.
         # But since the targets are tracked relative to the reference,
         # the reference must be visible.
