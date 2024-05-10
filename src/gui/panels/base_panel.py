@@ -227,3 +227,19 @@ class BasePanel(wx.Panel):
             flags=wx.SizerFlags(0).Border(
                 direction=(wx.TOP | wx.BOTTOM),
                 borderinpixels=BasePanel.DEFAULT_SPACING_PX_LINE_TOP_BOTTOM).Expand())
+
+    @staticmethod
+    def add_toggle_button(
+        parent: wx.Window,
+        sizer: wx.BoxSizer,
+        label: str
+    ) -> wx.ToggleButton:
+        toggle_button = wx.ToggleButton(
+            parent=parent,
+            label=label)
+        sizer.Add(
+            window=toggle_button,
+            flags=wx.SizerFlags(0).Expand())
+        sizer.AddSpacer(size=BasePanel.DEFAULT_SPACING_PX_VERTICAL)
+        return toggle_button
+
