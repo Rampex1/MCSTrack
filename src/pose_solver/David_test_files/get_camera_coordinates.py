@@ -50,22 +50,6 @@ DETECTOR_GREEN_INTRINSICS: Final[IntrinsicParameters] = IntrinsicParameters(
 marker_corners_dict = {}
 target_markers_list = []
 
-def scale_value(old_value, old_min, old_max, new_min, new_max):
-    return ((old_value - old_min) / (old_max - old_min)) * (new_max - new_min) + new_min
-
-def adjust_tvec(tvec):
-    x = scale_value(tvec[0], -220, 220, -0.5, 0.45)
-    y = scale_value(tvec[1], -171, 171, -0.5, 0.2)
-    z = 1
-    return np.array([x, y, z], dtype=np.float32)
-
-def draw_axes_on_marker(frame, camera_matrix, dist_coeffs, rvec, tvec, marker_length=0.1):
-    """
-    Draw 3D axes on the marker given the rotation vector, translation vector, and camera parameters.
-    """
-    # Draw the axes on the frame at the detected marker
-    return cv2.drawFrameAxes(frame, camera_matrix, dist_coeffs, rvec, tvec, marker_length)
-
 
 def detect_aruco_from_camera(pose_solver):
 
@@ -88,12 +72,33 @@ def detect_aruco_from_camera(pose_solver):
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-
         ### DETECTING CORNERS ###
         corners, ids, rejectedImgPoints = aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
 
         if ids is not None:
             aruco.drawDetectedMarkers(frame, corners, ids)
+
+            ### CREATE MATRIX ###
+            # X    ID1 ID2 ID3 ID4
+            # ID1  X
+            # ID2      X
+            # ID3          X
+            # ID4              X
+
+            n = len(target_markers_list)
+            relationship_matrix = np.zeros((n, n))
+
+            #print("Target Marker List:", target_markers_list)
+            #print("Matrix", relationship_matrix)
+
+
+
+
+
+
+
+
+
 
             ### ADD TARGET MARKER ###
             for marker_id in range(len(ids)):
@@ -103,7 +108,7 @@ def detect_aruco_from_camera(pose_solver):
                     if not pose_solver.target_marker_exists(ids[marker_id][0], MARKER_SIZE_MM):
                         pose_solver.add_target_marker(marker_id=marker_id, marker_diameter=target_marker_diameter)
 
-            ### ADD MARKER CORNERS ###
+            ### ADD CORNERS ###
             for i, corner in enumerate(corners):
                 marker_corners = MarkerCorners(
                     detector_label=DETECTOR_GREEN_NAME,
@@ -114,27 +119,13 @@ def detect_aruco_from_camera(pose_solver):
                 pose_solver.add_marker_corners([marker_corners])
 
                 marker_corners_dict[int(ids[i][0])] = corner[0].tolist()
-                #print(marker_corners_dict)
-
-                ### DRAWING VECTORS ###
-                """
-                if len(marker_corners_dict) > 1:
-                    first_marker_id = list(marker_corners_dict.keys())[0]
-                    first_marker_topleft_corner = marker_corners_dict[first_marker_id][0]
-
-                    for key, value in marker_corners_dict.items():
-                        if key != first_marker_id:
-                            topleft_corner = value[0]
-                            cv2.line(frame, tuple(map(int, first_marker_topleft_corner)),
-                                     tuple(map(int, topleft_corner)), (0, 255, 0), 2)
-                """
 
             pose_solver.update()
 
 
             detector_poses, target_poses = pose_solver.get_poses()
             #print("Detector Poses:", detector_poses)
-            print("Target Poses:", target_poses)
+            #print("Target Poses:", target_poses)
 
             camera_matrix = np.array([
                 [DETECTOR_GREEN_INTRINSICS.focal_length_x_px, 0, DETECTOR_GREEN_INTRINSICS.optical_center_x_px],
@@ -155,20 +146,25 @@ def detect_aruco_from_camera(pose_solver):
 
                 # NOTE: tvec is rescaled so it can be shown on screen
                 tvec = matrix_4x4[:3, 3]
-                adjusted_tvec = adjust_tvec(tvec)
+                tvec[0] /= 500 # 1100
+                tvec[1] /= 900
+                tvec[2] = 2
 
-                frame = draw_axes_on_marker(frame, camera_matrix, dist_coeffs, rvec, adjusted_tvec)
-                #frame = draw_axes_on_marker(frame, camera_matrix, dist_coeffs, rvec, tvec = np.array([0,0,0.5], dtype=np.float32).reshape(3, 1))
+                frame = cv2.drawFrameAxes(frame, camera_matrix, dist_coeffs, rvec, tvec, 0.1)
 
 
-        # Display the resulting frame
+
+
+
+
+
+
+        ### DISPLAY FRAME ###
         cv2.imshow('Frame with ArUco markers', frame)
 
-        # Press 'q' to exit
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-    # When everything done, release the capture
     cap.release()
     cv2.destroyAllWindows()
 
@@ -186,3 +182,77 @@ pose_solver.set_reference_target(reference_target)
 detect_aruco_from_camera(pose_solver)
 
 print("Target Marker List:", target_markers_list)
+
+
+
+### PSEUDOCODE FOR POSE TRANSPOSE MATRIX ###
+
+"""
+Assumptions for now: 2 cameras, reference board that DOESN'T move (we use reference as origin), target markers that can move
+
+Main Idea: Create a matrix where the index i,j contains information about the relationship between markers i and j
+[[all RVEC], RVEC_mean = 0, [all TVEC], TVEC_mean = 0, frame appearance % (optional)] # Could construct an object for this
+
+
+X   M1  M2  M3  M4
+M1  X   
+M2      X
+M3          X
+M4              X
+
+Start with 0x0 matrix
+markers_that_have_appeared = []
+
+for each frame:
+    for each detected marker "i":
+        # 1. Update the matrix dimensions if necessary
+        if marker not in markers_that_have_appeared:
+            matrix_size += 1
+            markers_that_have_appeared.append marker
+            
+        # 2. Update the matrix inputs
+        for each other marker "j":
+            new_relative_pose = compute_relative_pose(RVEC1, RVEC2, TVEC1, TVEC2) # Output of the form [RVEC, TVEC]
+            
+            # Fill in matrix for RVEC
+            if matrix[i][j][0].length == 0:  # No previous input for RVEC
+                matrix[i][j][0] = new_relative_pose[0]
+                matrix[i][j][1] = new_relative_pose
+            else:  # Previous data exists, we take the mean
+                matrix[i][j][0].append(new_relative_pose)
+                matrix[i][j][1] = mean(matrix[i][j][0])
+                
+            # Fill in matrix for TVEC
+            if matrix[i][j][2].length == 0:  # No previous input for RVEC
+                matrix[i][j][2] = new_relative_pose[1]
+                matrix[i][j][3] = new_relative_pose
+            else:  # Previous data exists, we take the mean
+                matrix[i][j][2].append(new_relative_pose)
+        
+        # By this point, the algorithm should be able to start constructing a table of pose relations between markers i,j
+        # If two markers i,j have matrix[i][j][1] = 0 or matrix[i][j][3] = 0, it means that the two markers have yet to appear in the same frame together
+                
+        # 3. Find the coordinate of the CENTER of all markers
+        for each markers_that_have_appeared k:
+            if marker_on_screen:
+                use_pose_solver
+            if marker_not_on_screen:
+                use_matrix
+                
+        use_matrix:
+            RVEC_mean = []
+            RVEC_mean = []
+            for matrix[k][i]: # Each input of row k
+                if mean != 0 and marker i is visible:
+                    RVEC_mean.append(get_RVEC_mean_of_that_square)
+                    TVEC_mean.append(get_TVEC_mean_of_that_square)
+            
+        
+            
+            
+            
+            
+
+
+
+"""

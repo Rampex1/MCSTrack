@@ -1,30 +1,20 @@
-import cv2
 import numpy as np
 
-# Create a blank image
-image = np.zeros((400, 400, 3), dtype=np.uint8)
+# Sample RVEC vector values
+rvec_values = np.array([0.2, 0.5, 0.8, 0.3])
 
-# Camera intrinsic parameters (e.g., from calibration)
-# Ensuring that camera_matrix is a 3x3 floating-point matrix
-camera_matrix = np.array([[320, 0, 200],
-                          [0, 320, 200],
-                          [0, 0, 1]], dtype=np.float32)
+# Create the relationship matrix
+n = len(rvec_values)
+relationship_matrix = np.zeros((n, n))
 
-# Assume no lens distortion
-dist_coeffs = np.zeros((4, 1), dtype=np.float32)
+"""
+# Fill in the relationship matrix
+for i in range(n):
+    for j in range(n):
+        # Calculate the relationship value between the first element of the vectors
+        relationship_matrix[i, j] = rvec_values[i] - rvec_values[j]
+"""
 
-# Object's rotation and translation vectors
-# Ensuring rvec and tvec are 3x1 floating-point vectors
-rvec = np.array([0.5, 0.5, 0.5], dtype=np.float32).reshape(3, 1)
-tvec = np.array([0, 0, 1], dtype=np.float32).reshape(3, 1)
 
-# Length of the axes to be drawn
-length = 100
-
-# Draw the axes
-cv2.drawFrameAxes(image, camera_matrix, dist_coeffs, rvec, tvec, length)
-
-# Display the image
-cv2.imshow('Frame Axes', image)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+print("Relationship Matrix:")
+print(relationship_matrix)
