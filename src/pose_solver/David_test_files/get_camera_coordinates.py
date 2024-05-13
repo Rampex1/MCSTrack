@@ -134,7 +134,7 @@ def detect_aruco_from_camera(pose_solver):
 
             detector_poses, target_poses = pose_solver.get_poses()
             #print("Detector Poses:", detector_poses)
-            #print("Target Poses:", target_poses)
+            print("Target Poses:", target_poses)
 
             camera_matrix = np.array([
                 [DETECTOR_GREEN_INTRINSICS.focal_length_x_px, 0, DETECTOR_GREEN_INTRINSICS.optical_center_x_px],
