@@ -51,8 +51,17 @@ target_markers_list = []  # Keep track of what markers have appeared at least on
 target_markers_list_uuid = []
 
 size_of_matrix = 0
-relationship_matrix = np.zeros((size_of_matrix, size_of_matrix))  # Matrix to record Transforms between markers
+relationship_matrix = [[None for _ in range(size_of_matrix)] for _ in range(size_of_matrix)]  # Matrix to record Transforms between markers  # Matrix to record Transforms between markers
 
+
+def expand_matrix(matrix):
+    size = len(matrix) + 1
+    new_matrix = [[None for _ in range(size)] for _ in range(size)]
+    for i in range(size - 1):
+        for j in range(size - 1):
+            new_matrix[i][j] = matrix[i][j]
+    print(new_matrix)
+    return new_matrix
 
 def calculate_relative_position(rvec1, tvec1, rvec2, tvec2):
     # Convert rotation vectors to rotation matrices
@@ -113,12 +122,8 @@ def detect_aruco_from_camera(pose_solver):
                     target_marker_diameter = MARKER_SIZE_MM
 
                     ### EXPAND MATRIX ###
-                    original_matrix = relationship_matrix
+                    relationship_matrix = expand_matrix(relationship_matrix)
                     size_of_matrix += 1
-                    expanded_matrix = np.zeros(
-                        (size_of_matrix, size_of_matrix), dtype=original_matrix.dtype)
-                    expanded_matrix[:size_of_matrix - 1, :size_of_matrix - 1] = original_matrix
-                    relationship_matrix = expanded_matrix
 
                     marker_uuid = pose_solver.try_add_target_marker(ids[marker_id][0], target_marker_diameter)
                     target_markers_list_uuid.append(marker_uuid)
@@ -179,17 +184,13 @@ def detect_aruco_from_camera(pose_solver):
                         #print("RELATIVE", relative_position)
 
                         matrix_entry = relationship_matrix[target_markers_list_uuid.index(pose.target_id)][target_markers_list_uuid.index(other_pose.target_id)]
-                        print(matrix_entry)
 
-                        if matrix_entry == 0:  # Create a new object
-
+                        if not matrix_entry:  # Create a new object
                             new_pose_location = PoseLocation()
                             new_pose_location.add_RVEC(relative_position[0])
                             new_pose_location.add_TVEC(relative_position[1])
                             relationship_matrix[target_markers_list_uuid.index(pose.target_id)][
                                 target_markers_list_uuid.index(other_pose.target_id)] = new_pose_location
-
-                        """
 
                         else: # Add data
                             relationship_matrix[target_markers_list_uuid.index(pose.target_id)][
@@ -197,11 +198,7 @@ def detect_aruco_from_camera(pose_solver):
                             relationship_matrix[target_markers_list_uuid.index(pose.target_id)][
                                 target_markers_list_uuid.index(other_pose.target_id)].add_TVEC(relative_position[1])
 
-                        print("RESULT", relationship_matrix)
-                        """
-
-                        # If element at pose, other_pose = 0, create new pose_location
-                        # add RVEC, TVEC
+                            # print("RESULT", relationship_matrix[0][1].get_TVEC)
 
                 # NOTE: tvec is rescaled so it can be shown on screen
                 tvec[0] /= 500  # 1100
