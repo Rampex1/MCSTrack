@@ -293,20 +293,21 @@ class PoseSolver:
         self._targets[target_id] = target
         return str(target_id)
 
-    def target_marker_exists(
+    def try_add_target_marker(
         self,
         marker_id: int,
-        marker_diameter: float,
+        marker_diameter: int
     ) -> bool:
         """
-        Returns True if target_marker has already been detected (David)
+        Returns marker id if marker can be added (David)
         Note: Later on, can be combined with add_target_marker for simplified code
         """
+
         try:
-            self.add_target_marker(marker_id=marker_id, marker_diameter=marker_diameter)
+            marker_uuid = self.add_target_marker(marker_id=marker_id, marker_diameter=marker_diameter)
             print(f"Added {marker_id}")
-            return True
-        except PoseSolverException as e:
+            return str(marker_uuid)
+        except PoseSolverException:
             print(f"{marker_id} already exists")
             return False
 

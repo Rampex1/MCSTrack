@@ -1,6 +1,5 @@
 class PoseLocation:
-    def __init__(self, ID):
-        self.ID = ID
+    def __init__(self):
 
         self.__RVEC = 0
         self.__TVEC = 0

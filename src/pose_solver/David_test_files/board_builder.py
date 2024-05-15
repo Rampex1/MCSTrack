@@ -112,21 +112,17 @@ def detect_aruco_from_camera(pose_solver):
                     target_markers_list.append(ids[marker_id][0])
                     target_marker_diameter = MARKER_SIZE_MM
 
-                    # Generate UUID for the new marker and add it to the list
-                    marker_uuid = pose_solver.to_uuid(marker_id, target_marker_diameter)
-                    target_markers_list_uuid.append(marker_uuid)
-
                     ### EXPAND MATRIX ###
                     original_matrix = relationship_matrix
                     size_of_matrix += 1
-                    expanded_matrix = np.zeros((size_of_matrix, size_of_matrix), dtype=original_matrix.dtype)
+                    expanded_matrix = np.zeros(
+                        (size_of_matrix, size_of_matrix), dtype=original_matrix.dtype)
                     expanded_matrix[:size_of_matrix - 1, :size_of_matrix - 1] = original_matrix
                     relationship_matrix = expanded_matrix
 
-                    print(relationship_matrix)
+                    marker_uuid = pose_solver.try_add_target_marker(ids[marker_id][0], target_marker_diameter)
+                    target_markers_list_uuid.append(marker_uuid)
 
-                    if not pose_solver.target_marker_exists(ids[marker_id][0], MARKER_SIZE_MM):
-                        pose_solver.add_target_marker(marker_id=marker_id, marker_diameter=target_marker_diameter)
 
             ### ADD CORNERS ###
             for i, corner in enumerate(corners):
@@ -177,9 +173,32 @@ def detect_aruco_from_camera(pose_solver):
 
                         relative_position = calculate_relative_position(rvec, other_rvec, np.array(np_array_tvec),
                                                                         np.array(other_np_array_tvec))
-                        print("POSE1", pose)
-                        print("Pose2", other_pose)
-                        print("RELATIVE", relative_position)
+
+                        #print("POSE1", pose)
+                        #print("Pose2", other_pose)
+                        #print("RELATIVE", relative_position)
+
+                        matrix_entry = relationship_matrix[target_markers_list_uuid.index(pose.target_id)][target_markers_list_uuid.index(other_pose.target_id)]
+                        print(matrix_entry)
+
+                        if matrix_entry == 0:  # Create a new object
+
+                            new_pose_location = PoseLocation()
+                            new_pose_location.add_RVEC(relative_position[0])
+                            new_pose_location.add_TVEC(relative_position[1])
+                            relationship_matrix[target_markers_list_uuid.index(pose.target_id)][
+                                target_markers_list_uuid.index(other_pose.target_id)] = new_pose_location
+
+                        """
+
+                        else: # Add data
+                            relationship_matrix[target_markers_list_uuid.index(pose.target_id)][
+                                target_markers_list_uuid.index(other_pose.target_id)].add_RVEC(relative_position[0])
+                            relationship_matrix[target_markers_list_uuid.index(pose.target_id)][
+                                target_markers_list_uuid.index(other_pose.target_id)].add_TVEC(relative_position[1])
+
+                        print("RESULT", relationship_matrix)
+                        """
 
                         # If element at pose, other_pose = 0, create new pose_location
                         # add RVEC, TVEC
