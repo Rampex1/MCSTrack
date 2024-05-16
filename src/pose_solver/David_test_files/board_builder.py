@@ -114,9 +114,11 @@ def detect_aruco_from_camera(pose_solver):
 
         if ids is not None:
             aruco.drawDetectedMarkers(frame, corners, ids)
+            visible_markers = []
 
             ### ADD TARGET MARKER ###
             for marker_id in range(len(ids)):
+                visible_markers.append(ids[marker_id][0])
                 if ids[marker_id][0] not in target_markers_list and ids[marker_id] != REFERENCE_MARKER_ID:
                     target_markers_list.append(ids[marker_id][0])
                     target_marker_diameter = MARKER_SIZE_MM
@@ -152,6 +154,9 @@ def detect_aruco_from_camera(pose_solver):
             dist_coeffs = np.array(
                 DETECTOR_GREEN_INTRINSICS.radial_distortion_coefficients + DETECTOR_GREEN_INTRINSICS.tangential_distortion_coefficients)
 
+
+            print("target_pose", target_poses)
+
             for pose in target_poses:
                 # R R R T
                 # R R R T
@@ -166,6 +171,9 @@ def detect_aruco_from_camera(pose_solver):
                 for i in tvec:
                     np_array_tvec.append([i])
 
+                #print("POSE", pose.target_id)
+                #print(f"Marker {target_markers_list[target_markers_list_uuid.index(pose.target_id)]}: TVEC = {tvec}, RVEC = {rvec}")
+
                 for other_pose in target_poses:
                     if other_pose != pose:
                         other_matrix_values = other_pose.object_to_reference_matrix.values
@@ -178,10 +186,6 @@ def detect_aruco_from_camera(pose_solver):
 
                         relative_position = calculate_relative_position(rvec, other_rvec, np.array(np_array_tvec),
                                                                         np.array(other_np_array_tvec))
-
-                        #print("POSE1", pose)
-                        #print("Pose2", other_pose)
-                        #print("RELATIVE", relative_position)
 
                         matrix_entry = relationship_matrix[target_markers_list_uuid.index(pose.target_id)][target_markers_list_uuid.index(other_pose.target_id)]
 
@@ -198,14 +202,39 @@ def detect_aruco_from_camera(pose_solver):
                             relationship_matrix[target_markers_list_uuid.index(pose.target_id)][
                                 target_markers_list_uuid.index(other_pose.target_id)].add_TVEC(relative_position[1])
 
-                            # print("RESULT", relationship_matrix[0][1].get_TVEC)
-
-                # NOTE: tvec is rescaled so it can be shown on screen
+                # NOTE: tvec is rescaled so it can be shown on screen, might cause mistake
                 tvec[0] /= 500  # 1100
                 tvec[1] /= 900
                 tvec[2] = 2
 
                 frame = cv2.drawFrameAxes(frame, camera_matrix, dist_coeffs, rvec, tvec, 0.1)
+
+
+            ### ID IS NOT IN FRAME ###
+            for marker in target_markers_list:
+                if marker not in visible_markers:
+                    marker_index = target_markers_list.index(marker)
+                    estimated_pose_location = PoseLocation()
+                    for j in range(len(target_markers_list) - 1):
+                        if relationship_matrix[j][marker_index]:
+                            # We know reference to visible marker and visible marker to hidden marker
+                            # Find reference to hidden marker
+                            Ra_matrix, _ = cv2.Rodrigues(rvec)
+                            Rb_matrix, _ = cv2.Rodrigues(relationship_matrix[j][marker_index].get_RVEC())
+
+                            R_origin_to_b = Ra_matrix @ Rb_matrix
+                            T_origin_to_b = Ra_matrix @ tvec + relationship_matrix[j][marker_index].get_TVEC()
+
+                            R_origin_to_b, _ = cv2.Rodrigues(R_origin_to_b)
+
+                            estimated_pose_location.add_RVEC(R_origin_to_b)
+                            estimated_pose_location.add_TVEC(T_origin_to_b)
+
+                    #print(f"Estimated pose location for marker {marker} is TVEC = {estimated_pose_location.get_TVEC()} "
+                          #f"and RVEC = {estimated_pose_location.get_RVEC()}")
+
+
+
 
         ### DISPLAY FRAME ###
         cv2.imshow('Frame with ArUco markers', frame)
@@ -230,8 +259,11 @@ pose_solver.set_reference_target(reference_target)
 
 detect_aruco_from_camera(pose_solver)
 
+print("------------------------------------------------------------------------------------------------------------------")
 print("Target Marker List:", target_markers_list)
 print("Target Marker List UUID:", target_markers_list_uuid)
+print("Relationship Matrix:", relationship_matrix)
+
 
 ### PSEUDOCODE FOR POSE TRANSPOSE MATRIX ###
 
