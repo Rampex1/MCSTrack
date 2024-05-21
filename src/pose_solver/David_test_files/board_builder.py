@@ -60,31 +60,28 @@ def expand_matrix(matrix):
     for i in range(size - 1):
         for j in range(size - 1):
             new_matrix[i][j] = matrix[i][j]
-    print(new_matrix)
     return new_matrix
 
-def calculate_relative_position(rvec1, tvec1, rvec2, tvec2):
-    # Convert rotation vectors to rotation matrices
-    R1, _ = cv2.Rodrigues(rvec1)
-    R2, _ = cv2.Rodrigues(rvec2)
-
-    # Create transformation matrices
-    T1 = np.hstack((R1, tvec1))
-    T2 = np.hstack((R2, tvec2))
-    T1 = np.vstack((T1, [0, 0, 0, 1]))
-    T2 = np.vstack((T2, [0, 0, 0, 1]))
-
-    # Calculate the relative transformation matrix
+def calculate_relative_transform(T1, T2):
     T1_inv = np.linalg.inv(T1)
-    T_relative = np.dot(T1_inv, T2)
 
-    # Extract relative rotation and translation
-    relative_rotation_matrix = T_relative[0:3, 0:3]
-    relative_translation_vector = T_relative[0:3, 3]
-    relative_rotation_vector, _ = cv2.Rodrigues(relative_rotation_matrix)
+    # Compute the relative transformation matrix
+    relative_T = np.dot(T1_inv, T2)
 
-    # Output the results
-    return relative_rotation_vector, relative_translation_vector
+    return relative_T
+
+def to_numpy_array(list):  # Assuming list is pose.object_to_reference_matrix, so 4x4
+    lst = []
+    for i in range(4):
+        for j in range(4):
+            lst.append(list[i,j])
+
+    return np.array(lst).reshape(4,4)
+
+def estimate_reference_to_invisible(T_AB, T_BC):
+    T_AC = np.dot(T_AB, T_BC)
+    return T_AC
+
 
 
 def detect_aruco_from_camera(pose_solver):
@@ -155,7 +152,7 @@ def detect_aruco_from_camera(pose_solver):
                 DETECTOR_GREEN_INTRINSICS.radial_distortion_coefficients + DETECTOR_GREEN_INTRINSICS.tangential_distortion_coefficients)
 
 
-            print("target_pose", target_poses)
+            # print("target_pose", target_poses)
 
             for pose in target_poses:
                 # R R R T
@@ -163,75 +160,51 @@ def detect_aruco_from_camera(pose_solver):
                 # R R R T
                 # 0 0 0 1
 
+                print("POSE", pose.target_id, pose.object_to_reference_matrix.values)
                 matrix_values = pose.object_to_reference_matrix.values
-                matrix_4x4 = np.array(matrix_values).reshape(4, 4)
-                rvec, _ = cv2.Rodrigues(matrix_4x4[:3, :3])
-                tvec = matrix_4x4[:3, 3]
-                np_array_tvec = []
-                for i in tvec:
-                    np_array_tvec.append([i])
-
-                #print("POSE", pose.target_id)
-                #print(f"Marker {target_markers_list[target_markers_list_uuid.index(pose.target_id)]}: TVEC = {tvec}, RVEC = {rvec}")
+                pose_matrix = np.array(matrix_values).reshape(4, 4)
 
                 for other_pose in target_poses:
                     if other_pose != pose:
-                        other_matrix_values = other_pose.object_to_reference_matrix.values
-                        other_matrix_4x4 = np.array(other_matrix_values).reshape(4, 4)
-                        other_rvec, _ = cv2.Rodrigues(other_matrix_4x4[:3, :3])
-                        other_tvec = other_matrix_4x4[:3, 3]
-                        other_np_array_tvec = []
-                        for i in other_tvec:
-                            other_np_array_tvec.append([i])
 
-                        relative_position = calculate_relative_position(rvec, other_rvec, np.array(np_array_tvec),
-                                                                        np.array(other_np_array_tvec))
+                        other_pose_matrix = to_numpy_array(other_pose.object_to_reference_matrix)
 
-                        matrix_entry = relationship_matrix[target_markers_list_uuid.index(pose.target_id)][target_markers_list_uuid.index(other_pose.target_id)]
+                        relative_position = calculate_relative_transform(pose_matrix, other_pose_matrix)
+
+                        #print("RELATIVE", pose.target_id, other_pose.target_id)
+                        #print(relative_position)
+
+                        matrix_entry = relationship_matrix[target_markers_list_uuid.index(pose.target_id)][
+                            target_markers_list_uuid.index(other_pose.target_id)]
 
                         if not matrix_entry:  # Create a new object
                             new_pose_location = PoseLocation()
-                            new_pose_location.add_RVEC(relative_position[0])
-                            new_pose_location.add_TVEC(relative_position[1])
+                            new_pose_location.add_matrix(relative_position)
                             relationship_matrix[target_markers_list_uuid.index(pose.target_id)][
                                 target_markers_list_uuid.index(other_pose.target_id)] = new_pose_location
 
-                        else: # Add data
+                        else:  # Add data
                             relationship_matrix[target_markers_list_uuid.index(pose.target_id)][
-                                target_markers_list_uuid.index(other_pose.target_id)].add_RVEC(relative_position[0])
-                            relationship_matrix[target_markers_list_uuid.index(pose.target_id)][
-                                target_markers_list_uuid.index(other_pose.target_id)].add_TVEC(relative_position[1])
-
-                # NOTE: tvec is rescaled so it can be shown on screen, might cause mistake
-                tvec[0] /= 500  # 1100
-                tvec[1] /= 900
-                tvec[2] = 2
-
-                frame = cv2.drawFrameAxes(frame, camera_matrix, dist_coeffs, rvec, tvec, 0.1)
-
+                                target_markers_list_uuid.index(other_pose.target_id)].add_matrix(relative_position)
 
             ### ID IS NOT IN FRAME ###
-            for marker in target_markers_list:
-                if marker not in visible_markers:
-                    marker_index = target_markers_list.index(marker)
+            for marker in target_markers_list_uuid:
+                marker_index = target_markers_list_uuid.index(marker)
+                if target_markers_list[marker_index] not in visible_markers:
                     estimated_pose_location = PoseLocation()
-                    for j in range(len(target_markers_list) - 1):
-                        if relationship_matrix[j][marker_index]:
-                            # We know reference to visible marker and visible marker to hidden marker
-                            # Find reference to hidden marker
-                            Ra_matrix, _ = cv2.Rodrigues(rvec)
-                            Rb_matrix, _ = cv2.Rodrigues(relationship_matrix[j][marker_index].get_RVEC())
+                    for other_marker in target_poses:
 
-                            R_origin_to_b = Ra_matrix @ Rb_matrix
-                            T_origin_to_b = Ra_matrix @ tvec + relationship_matrix[j][marker_index].get_TVEC()
+                        if relationship_matrix[target_markers_list_uuid.index(other_marker.target_id)][marker_index] and target_markers_list[target_markers_list_uuid.index(other_marker.target_id)] in visible_markers:
+                            T_AB = other_marker.object_to_reference_matrix.values
+                            T_AB = np.reshape(T_AB, (4, 4))
+                            T_BC = relationship_matrix[target_markers_list_uuid.index(other_marker.target_id)][marker_index].get_TMatrix()
+                            T_AC = estimate_reference_to_invisible(T_AB, T_BC)
+                            estimated_pose_location.add_matrix(T_AC)
 
-                            R_origin_to_b, _ = cv2.Rodrigues(R_origin_to_b)
+                    marker_position = estimated_pose_location.get_TMatrix()
+                    rounded_matrix = np.round(marker_position, decimals=2)
 
-                            estimated_pose_location.add_RVEC(R_origin_to_b)
-                            estimated_pose_location.add_TVEC(T_origin_to_b)
-
-                    #print(f"Estimated pose location for marker {marker} is TVEC = {estimated_pose_location.get_TVEC()} "
-                          #f"and RVEC = {estimated_pose_location.get_RVEC()}")
+                    print(f"The position of marker {marker} is {rounded_matrix}")
 
 
 
