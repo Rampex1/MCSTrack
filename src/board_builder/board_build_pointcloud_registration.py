@@ -115,10 +115,6 @@ class BoardBuilder:
                 corners_location = self._calculate_corners_location(pose_matrix, self.local_corners)
                 self._draw_corners_location(corners_location, frame)
 
-
-
-
-
             ### ID IS NOT IN FRAME ###
             for marker in list(self.target_marker_to_uuid.keys()):
                 if marker not in visible_markers:

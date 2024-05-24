@@ -145,92 +145,62 @@ class BoardBuilder:
                 )
                 self.pose_solver.add_marker_corners([marker_corners])
 
-            if self.REFERENCE_MARKER_ID in visible_markers:
-                ### SOLVE POSE ###
-                self.pose_solver.update()
-                detector_poses, target_poses = self.pose_solver.get_poses()
+            ### SOLVE POSE ###
+            self.pose_solver.update()
+            detector_poses, target_poses = self.pose_solver.get_poses()
 
-                for pose in target_poses:
-                    # R R R T
-                    # R R R T
-                    # R R R T
-                    # 0 0 0 1
+            for pose in target_poses:
+                # R R R T
+                # R R R T
+                # R R R T
+                # 0 0 0 1
 
-                    print("POSE", pose.target_id, pose.object_to_reference_matrix.values)
+                #print("POSE", pose.target_id, pose.object_to_reference_matrix.values)
 
-                    pose_values = pose.object_to_reference_matrix.values
-                    pose_matrix = np.array(pose_values).reshape(4, 4)
+                pose_values = pose.object_to_reference_matrix.values
+                pose_matrix = np.array(pose_values).reshape(4, 4)
 
-                    corners_location = self._calculate_corners_location(pose_matrix, self.local_corners)
-                    self._draw_corners_location(corners_location, frame)
+                corners_location = self._calculate_corners_location(pose_matrix, self.local_corners)
+                self._draw_corners_location(corners_location, frame)
 
-                    for other_pose in target_poses:
-                        if other_pose != pose:
-                            other_matrix_values = other_pose.object_to_reference_matrix.values
-                            other_pose_matrix = np.array(other_matrix_values).reshape(4, 4)
-                            relative_transform = self._calculate_relative_transform(pose_matrix, other_pose_matrix)
-                            matrix_index = self._find_matrix_input_index(pose.target_id, other_pose.target_id)
+                for other_pose in target_poses:
+                    if other_pose != pose:
+                        other_matrix_values = other_pose.object_to_reference_matrix.values
+                        other_pose_matrix = np.array(other_matrix_values).reshape(4, 4)
+                        relative_transform = self._calculate_relative_transform(pose_matrix, other_pose_matrix)
+                        matrix_index = self._find_matrix_input_index(pose.target_id, other_pose.target_id)
 
-                            if not self.relative_pose_matrix[matrix_index[0]][matrix_index[1]]:
-                                new_pose_location = PoseLocation()
-                                new_pose_location.add_matrix(relative_transform)
-                                self.relative_pose_matrix[matrix_index[0]][matrix_index[1]] = new_pose_location
-                            else:
-                                self.relative_pose_matrix[matrix_index[0]][matrix_index[1]].add_matrix(relative_transform)
+                        if not self.relative_pose_matrix[matrix_index[0]][matrix_index[1]]:
+                            new_pose_location = PoseLocation()
+                            new_pose_location.add_matrix(relative_transform)
+                            self.relative_pose_matrix[matrix_index[0]][matrix_index[1]] = new_pose_location
+                        else:
+                            self.relative_pose_matrix[matrix_index[0]][matrix_index[1]].add_matrix(relative_transform)
 
-                ### ID IS NOT IN FRAME ###
-                for marker in list(self.target_marker_to_uuid.keys()):
-                    if marker not in visible_markers:
-                        estimated_pose_location = PoseLocation()
-                        for other_marker in target_poses:
-                            matrix_index = self._find_matrix_input_index(other_marker.target_id, self.target_marker_to_uuid[marker])
-                            other_marker_id = -1
-                            for id in self.target_marker_to_uuid:
-                                if self.target_marker_to_uuid[id] == other_marker.target_id:
-                                    other_marker_id = id
+            ### ID IS NOT IN FRAME ###
+            for marker in list(self.target_marker_to_uuid.keys()):
+                if marker not in visible_markers:
+                    estimated_pose_location = PoseLocation()
+                    for other_marker in target_poses:
+                        matrix_index = self._find_matrix_input_index(other_marker.target_id, self.target_marker_to_uuid[marker])
+                        other_marker_id = -1
+                        for id in self.target_marker_to_uuid:
+                            if self.target_marker_to_uuid[id] == other_marker.target_id:
+                                other_marker_id = id
 
-                            if self.relative_pose_matrix[matrix_index[0]][matrix_index[1]] and other_marker_id in visible_markers:
-                                T_AB = other_marker.object_to_reference_matrix.values
-                                T_AB = np.reshape(T_AB, (4, 4))
-                                T_BC = self.relative_pose_matrix[matrix_index[0]][matrix_index[1]].get_TMatrix()
-                                T_AC = self._estimate_reference_to_not_visible(T_AB, T_BC)
-                                estimated_pose_location.add_matrix(T_AC)
+                        if self.relative_pose_matrix[matrix_index[0]][matrix_index[1]] and other_marker_id in visible_markers:
+                            T_AB = other_marker.object_to_reference_matrix.values
+                            T_AB = np.reshape(T_AB, (4, 4))
+                            T_BC = self.relative_pose_matrix[matrix_index[0]][matrix_index[1]].get_TMatrix()
+                            T_AC = self._estimate_reference_to_not_visible(T_AB, T_BC)
+                            estimated_pose_location.add_matrix(T_AC)
 
-                        marker_position = estimated_pose_location.get_TMatrix()
-                        rounded_matrix = np.round(marker_position, decimals=3)
+                    marker_position = estimated_pose_location.get_TMatrix()
+                    rounded_matrix = np.round(marker_position, decimals=3)
 
-                        invisible_corners_location = self._calculate_corners_location(marker_position, self.local_corners)
-                        self._draw_corners_location(invisible_corners_location, frame)
-                        #print(f"The position of marker {self.target_marker_to_uuid[marker]} is {rounded_matrix}")
-
-            else:
-                temp_reference_marker = -1
-                for marker in self.target_marker_to_uuid:
-                    if marker in visible_markers:
-                        temp_reference_marker = marker
-                        break
-
-                if temp_reference_marker != -1:
-                    ### ID IS NOT IN FRAME ###
-
-                    invisible_corners_location = self._calculate_corners_location(np.array([[ 1.0,  0.0,  0.0,  0.0],
-                    [ 0.0,  1.0,  0.0,  0.0],
-                    [ 0.0,  0.0,  1.0,  0.0],
-                    [ 0.0,  0.0,  0.0,  1.0]]),
-                    self.local_corners)
-
+                    invisible_corners_location = self._calculate_corners_location(marker_position, self.local_corners)
                     self._draw_corners_location(invisible_corners_location, frame)
-                    for marker in list(self.target_marker_to_uuid.keys()):
-                        if marker != temp_reference_marker:
-                            matrix_index = self._find_matrix_input_index(self.target_marker_to_uuid[temp_reference_marker], self.target_marker_to_uuid[marker])
-                            marker_position = self.relative_pose_matrix[matrix_index[0]][matrix_index[1]].get_TMatrix()
-                            invisible_corners_location = self._calculate_corners_location(marker_position,
-                                                                                          self.local_corners)
-                            self._draw_corners_location(invisible_corners_location, frame)
-                            #print(f"The position of marker {self.target_marker_to_uuid[marker]} is {marker_position}")
-
-
-
+                    #print(f"The position of marker {self.target_marker_to_uuid[marker]} is {rounded_matrix}")
         return frame
 
     def run(self):
