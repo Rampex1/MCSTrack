@@ -27,31 +27,3 @@ class PoseLocation:
         return self.__TMatrix
 
 
-"""
-pose_location = PoseLocation()
-
-# Define some transformation matrices
-transform1 = np.eye(4)
-transform1[:3, :3] = R.from_euler('xyz', [45, 0, 0], degrees=True).as_matrix()
-transform1[:3, 3] = [1, 2, 3]
-
-transform2 = np.eye(4)
-transform2[:3, :3] = R.from_euler('xyz', [0, 45, 0], degrees=True).as_matrix()
-transform2[:3, 3] = [5, 2, 6]
-
-transform3 = np.eye(4)
-transform3[:3, :3] = R.from_euler('xyz', [0, 0, 45], degrees=True).as_matrix()
-transform3[:3, 3] = [6, 11, 9]
-
-# Add these matrices to the PoseLocation
-pose_location.add_matrix(transform1)
-pose_location.add_matrix(transform2)
-pose_location.add_matrix(transform3)
-
-# Retrieve the averaged transformation matrix
-avg_matrix = pose_location.get_TMatrix()
-
-# Print the average transformation matrix
-print("Averaged Transformation Matrix:")
-print(avg_matrix)
-"""

@@ -1,33 +1,10 @@
-from cv2 import aruco
-import numpy as np
-
-from src.pose_solver.pose_solver import \
-    PoseSolver
-
-from src.pose_solver.structures import \
-    MarkerCorners, \
-    TargetMarker, \
-    Target
-
-from src.common.structures import \
-    IntrinsicParameters
-
-from src.pose_solver.David_test_files.pose_location import \
+from src.board_builder.pose_location import \
     PoseLocation
 
 from src.common.structures import \
-    IntrinsicParameters, \
-    Matrix4x4, \
-    Pose
+    Matrix4x4
 
-import cv2
-import cv2.aruco
-import datetime
-import numpy
-from scipy.spatial.transform import Rotation
-from typing import Callable, Final, Optional, TypeVar
-import uuid
-
+from typing import Final
 
 virtual_cube = {
     6: [4,4,0],
