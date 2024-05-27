@@ -1,6 +1,7 @@
 import cv2
 from cv2 import aruco
 import numpy as np
+import pose_location
 
 from src.board_builder.pose_location import PoseLocation
 
@@ -48,10 +49,21 @@ class BoardBuilder:
         corners_reference = corners_reference[:, :3]
         return corners_reference
 
+    def _find_new_reference(self):
+        new_reference = PoseLocation()
+
+        for i in range(len(self.relative_pose_matrix)):
+            for j in range(len(self.relative_pose_matrix)):
+                if self.relative_pose_matrix[i][j]:
+                    new_reference.add_matrix(self.relative_pose_matrix[i][j].get_TMatrix())
+
+        return new_reference.get_TMatrix()
+
     def build_board(self, local_corners):
         visible_markers = []
         corners_dict = {}
 
+        new_reference = self._find_new_reference()
         if self.target_poses:
             for pose in self.target_poses:
                 pose_values = pose.object_to_reference_matrix.values

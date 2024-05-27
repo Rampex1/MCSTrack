@@ -184,6 +184,7 @@ class Interface:
             corners_location = self._calculate_corners_location(pose_matrix, self.local_corners)
             self._draw_corners_location(corners_location, frame, self.marker_color[color_index])
 
+            print("MATRIX", self._relative_pose_matrix)
             for other_pose in self._target_poses:
                 if other_pose != pose:
                     other_matrix_values = other_pose.object_to_reference_matrix.values
@@ -225,14 +226,6 @@ class Interface:
 
             if not ret:
                 break
-            if collecting_data:
-                self._solve_pose(ids, corners)
-                self._collect_data(frame)
-            elif building_board:
-                self._solve_pose(ids, corners)
-                self._build_board(frame)
-
-            cv2.imshow('Frame', frame)
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord('c'):
@@ -251,8 +244,27 @@ class Interface:
                 self._index_to_marker_id = {}
                 self._target_poses = []
 
+
+                self.pose_solver = PoseSolver()
+                self.pose_solver.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
+                reference_target: Target = TargetMarker(
+                    marker_id=self.REFERENCE_MARKER_ID,
+                    marker_size=self.MARKER_SIZE_MM)
+                self.pose_solver.set_reference_target(reference_target)
+
             elif key == ord('q'):
                 break
+
+            if collecting_data:
+                self._solve_pose(ids, corners)
+                self._collect_data(frame)
+            elif building_board:
+                self._solve_pose(ids, corners)
+                self._build_board(frame)
+
+            cv2.imshow('Frame', frame)
+
+
 
         cap.release()
         cv2.destroyAllWindows()
