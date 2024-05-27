@@ -49,6 +49,7 @@ class Interface:
         self._marker_id_to_uuid = {}
         self._index_to_marker_id = {}
         self._target_poses = []
+        self._visible_markers = []
 
 
         self.MARKER_MIDDLE_TO_EDGE_IN_PIXELS = 20
@@ -134,6 +135,41 @@ class Interface:
             x, y, z = corner
             cv2.circle(frame, (int(x) + 200, - int(y) + 200), 4, marker_color, -1)
 
+    def _draw_board_builder(self, frame):
+        corners_dict = {}
+
+        if self._target_poses:
+            for pose in self._target_poses:
+                pose_values = pose.object_to_reference_matrix.values
+                pose_matrix = np.array(pose_values).reshape(4, 4)
+                corners_location = self._calculate_corners_location(pose_matrix, self.local_corners)
+
+                corners_dict[pose.target_id] = corners_location
+                self._visible_markers.append(pose.target_id)
+
+            ### ID IS NOT IN FRAME ###
+            for marker_uuid in list(self._marker_id_to_uuid.values()):
+                if marker_uuid not in self._visible_markers:
+                    estimated_pose_location = PoseLocation()
+                    for other_marker_pose in self._target_poses:
+                        matrix_index = self._find_matrix_input_index(other_marker_pose.target_id, marker_uuid)
+
+                        if self._relative_pose_matrix[matrix_index[0]][
+                            matrix_index[1]] and other_marker_pose.target_id in self._visible_markers:
+                            T_AB = other_marker_pose.object_to_reference_matrix.values
+                            T_AB = np.reshape(T_AB, (4, 4))
+                            T_BC = self._relative_pose_matrix[matrix_index[0]][matrix_index[1]].get_TMatrix()
+                            T_AC = self._estimate_reference_to_not_visible(T_AB, T_BC)
+                            estimated_pose_location.add_matrix(T_AC)
+                    marker_pose_matrix = estimated_pose_location.get_TMatrix()
+                    invisible_corners_location = self._calculate_corners_location(marker_pose_matrix,
+                                                                                  self.local_corners)
+                    corners_dict[marker_uuid] = invisible_corners_location
+
+        for index, marker_uuid in enumerate(corners_dict):
+            color_index = index % len(self.marker_color)
+            self._draw_corners_location(corners_dict[marker_uuid], frame, self.marker_color[color_index])
+
     def _solve_pose(self, ids, corners):
         """ Given visible Ids and their corners, uses pose_solver to solve the pose """
         if ids is not None:
@@ -151,6 +187,7 @@ class Interface:
                     ### EXPAND MATRIX ###
                     self._relative_pose_matrix = self._expand_matrix(self._relative_pose_matrix)
                     self._matrix_size += 1
+            self._visible_markers = visible_markers
 
             ### ADD CORNERS ###
             for i, corner in enumerate(corners):
@@ -184,7 +221,6 @@ class Interface:
             corners_location = self._calculate_corners_location(pose_matrix, self.local_corners)
             self._draw_corners_location(corners_location, frame, self.marker_color[color_index])
 
-            print("MATRIX", self._relative_pose_matrix)
             for other_pose in self._target_poses:
                 if other_pose != pose:
                     other_matrix_values = other_pose.object_to_reference_matrix.values
@@ -200,12 +236,11 @@ class Interface:
                         self._relative_pose_matrix[matrix_index[0]][matrix_index[1]].add_matrix(relative_transform)
 
     def _build_board(self, frame):
-        board_builder = BoardBuilder(self._target_poses, self._relative_pose_matrix, self._marker_id_to_uuid, self._index_to_marker_id)
-        corners_dict = board_builder.build_board(self.local_corners)
+        board_builder = BoardBuilder(self._relative_pose_matrix, self._marker_id_to_uuid, self._index_to_marker_id)
+        board_builder.build_board()
 
-        for index, marker_uuid in enumerate(corners_dict):
-            color_index = index % len(self.marker_color)
-            self._draw_corners_location(corners_dict[marker_uuid], frame, self.marker_color[color_index])
+        self._draw_board_builder(frame)
+
 
     def update(self):
         cap = cv2.VideoCapture(1)
@@ -243,6 +278,7 @@ class Interface:
                 self._marker_id_to_uuid = {}
                 self._index_to_marker_id = {}
                 self._target_poses = []
+                self._visible_markers = []
 
 
                 self.pose_solver = PoseSolver()

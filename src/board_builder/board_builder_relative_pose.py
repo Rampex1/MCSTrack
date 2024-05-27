@@ -7,11 +7,12 @@ from src.board_builder.pose_location import PoseLocation
 
 class BoardBuilder:
 
-    def __init__(self, target_poses, relative_pose_matrix, marker_id_to_uuid, index_to_marker_id):
-        self.target_poses = target_poses
+    def __init__(self, relative_pose_matrix, marker_id_to_uuid, index_to_marker_id):
         self.relative_pose_matrix = relative_pose_matrix
         self.marker_id_to_uuid = marker_id_to_uuid
-        self. index_to_marker_id = index_to_marker_id
+        self.index_to_marker_id = index_to_marker_id
+
+        self._local_relative_pose_matrix = [[None for _ in range(len(self.relative_pose_matrix))] for _ in range(len(self.relative_pose_matrix))]
 
     def _find_matrix_input_index(self, pose_uuid, other_pose_uuid, marker_id_to_uuid, index_to_marker_id):
         """ Given two pose uuids, return their index location in the relative pose matrix """
@@ -41,54 +42,32 @@ class BoardBuilder:
         return T_AC
 
 
-    def _calculate_corners_location(self, T_matrix, local_corners):
-        corners_reference = np.zeros((4, 4))
-        for i in range(4):
-            corners_reference[i] = T_matrix @ local_corners[i]
-
-        corners_reference = corners_reference[:, :3]
-        return corners_reference
-
     def _find_new_reference(self):
         new_reference = PoseLocation()
 
         for i in range(len(self.relative_pose_matrix)):
             for j in range(len(self.relative_pose_matrix)):
-                if self.relative_pose_matrix[i][j]:
+                if self.relative_pose_matrix[i][j] is not None:
                     new_reference.add_matrix(self.relative_pose_matrix[i][j].get_TMatrix())
 
         return new_reference.get_TMatrix()
 
-    def build_board(self, local_corners):
-        visible_markers = []
-        corners_dict = {}
+    def _calculate_relative_transform(self, T1, T2):
+        """ Given transform T1 from reference to marker 1, and transfrom T2 from reference to marker 2, calculate the
+        transform from T1 to T2"""
+        T1_inv = np.linalg.inv(T1)
+        relative_T = np.dot(T1_inv, T2)
+        return relative_T
 
+    def build_board(self):
         new_reference = self._find_new_reference()
-        if self.target_poses:
-            for pose in self.target_poses:
-                pose_values = pose.object_to_reference_matrix.values
-                pose_matrix = np.array(pose_values).reshape(4, 4)
-                corners_location = self._calculate_corners_location(pose_matrix, local_corners)
 
-                corners_dict[pose.target_id] = corners_location
-                visible_markers.append(pose.target_id)
+        for i in range(len(self.relative_pose_matrix)):
+            for j in range(len(self.relative_pose_matrix)):
+                if self.relative_pose_matrix[i][j] is not None:
+                    new_pose_location = PoseLocation()
+                    new_matrix_from_reference = self._calculate_relative_transform(new_reference, self.relative_pose_matrix[i][j].get_TMatrix())
+                    new_pose_location.add_matrix(new_matrix_from_reference)
+                    self._local_relative_pose_matrix[i][j] = new_pose_location
 
-            ### ID IS NOT IN FRAME ###
-            for marker_uuid in list(self.marker_id_to_uuid.values()):
-                if marker_uuid not in visible_markers:
-                    estimated_pose_location = PoseLocation()
-                    for other_marker_pose in self.target_poses:
-                        matrix_index = self._find_matrix_input_index(other_marker_pose.target_id, marker_uuid, self.marker_id_to_uuid, self.index_to_marker_id)
-
-                        if self.relative_pose_matrix[matrix_index[0]][matrix_index[1]] and other_marker_pose.target_id in visible_markers:
-                            T_AB = other_marker_pose.object_to_reference_matrix.values
-                            T_AB = np.reshape(T_AB, (4, 4))
-                            T_BC = self.relative_pose_matrix[matrix_index[0]][matrix_index[1]].get_TMatrix()
-                            T_AC = self._estimate_reference_to_not_visible(T_AB, T_BC)
-                            estimated_pose_location.add_matrix(T_AC)
-                    marker_pose_matrix = estimated_pose_location.get_TMatrix()
-                    invisible_corners_location = self._calculate_corners_location(marker_pose_matrix, local_corners)
-                    corners_dict[marker_uuid] = invisible_corners_location
-
-        return corners_dict
-
+        return self._local_relative_pose_matrix
