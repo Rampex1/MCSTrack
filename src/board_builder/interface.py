@@ -74,6 +74,7 @@ class Interface:
             (128, 0, 128)  # Purple
         ]
 
+
     def _expand_matrix(self, matrix):
         """ Adds one row and one column to the matrix and initializes them to None """
         size = len(matrix) + 1
