@@ -1,5 +1,6 @@
 from src.gui.panels import \
     BasePanel, \
+    BoardBuilderPanel, \
     CalibratorPanel, \
     ConnectorPanel, \
     DetectorPanel, \
@@ -16,6 +17,7 @@ from typing import Final
 CONNECTOR_LABEL: Final[str] = "Connector"
 DETECTOR_LABEL: Final[str] = "Detector"
 CALIBRATOR_LABEL: Final[str] = "Calibrator"
+BOARD_BUILDER_LABEL: Final[str] = "Board Builder"
 POSE_SOLVER_LABEL: Final[str] = "Pose Solver"
 
 
@@ -80,6 +82,15 @@ class ControllerFrame(wx.Frame):
         self._notebook.AddPage(
             page=self._calibrator_panel,
             text=CALIBRATOR_LABEL,
+            select=False)
+
+        self._board_builder_panel = BoardBuilderPanel(
+            parent=self._notebook,
+            connector=self._connector,
+            status_message_source=self._status_message_source)
+        self._notebook.AddPage(
+            page=self._board_builder_panel,
+            text=BOARD_BUILDER_LABEL,
             select=False)
 
         self._pose_solver_panel = PoseSolverPanel(
