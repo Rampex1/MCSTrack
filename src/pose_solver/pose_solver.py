@@ -308,19 +308,8 @@ class PoseSolver:
             print(f"Added {marker_id}")
             return str(marker_uuid)
         except PoseSolverException:
-            print(f"{marker_id} already exists")
             return False
 
-    def to_uuid(
-            self,
-            marker_id: int,
-            marker_diameter: float
-    ) -> str:
-        target: Target = TargetMarker(
-            marker_id=marker_id,
-            marker_size=marker_diameter)
-        target_id: uuid.UUID = uuid.uuid4()
-        return str(target_id)
 
     def get_poses(
         self
