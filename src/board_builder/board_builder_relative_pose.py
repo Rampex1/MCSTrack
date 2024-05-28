@@ -65,17 +65,8 @@ class BoardBuilder:
 
         return pose_index, other_pose_index
 
-    def _find_new_reference(self):
-        new_reference = PoseLocation()
-
-        for i in range(len(self._relative_pose_matrix)):
-            for j in range(len(self._relative_pose_matrix)):
-                if self._relative_pose_matrix[i][j] is not None:
-                    new_reference.add_matrix(self._relative_pose_matrix[i][j].get_TMatrix())
-
-        return new_reference.get_TMatrix()
-
     def _get_occluded_markers_pose(self):
+        """ Find the pose of occluded markers based on the pose of visible markers """
         corners_dict = {}
 
         if self._target_poses:
@@ -167,6 +158,8 @@ class BoardBuilder:
         return self._relative_pose_matrix
 
     def build_board(self):
+        """ Builds board using the relative matrix"""
+
         new_reference = self._find_new_reference()
         self._local_relative_pose_matrix = [[None for _ in range(len(self._relative_pose_matrix))] for _ in
                                             range(len(self._relative_pose_matrix))]
@@ -182,6 +175,6 @@ class BoardBuilder:
 
         # TO BE REMOVED
         occluded_markers_dict = self._get_occluded_markers_pose()
-
         return occluded_markers_dict
 
+        # return self._local_relative_pose_matrix
