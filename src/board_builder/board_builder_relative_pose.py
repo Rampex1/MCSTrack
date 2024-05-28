@@ -75,11 +75,11 @@ class BoardBuilder:
 
         return new_reference.get_TMatrix()
 
-    def _get_occluded_markers_pose(self, target_poses):
+    def _get_occluded_markers_pose(self):
         corners_dict = {}
 
-        if target_poses:
-            for pose in target_poses:
+        if self._target_poses:
+            for pose in self._target_poses:
                 pose_values = pose.object_to_reference_matrix.values
                 pose_matrix = np.array(pose_values).reshape(4, 4)
                 corners_location = self._calculate_corners_location(pose_matrix, self.local_corners)
@@ -89,7 +89,7 @@ class BoardBuilder:
             for marker_uuid in list(self._index_to_marker_uuid.values()):
                 if marker_uuid not in self._visible_markers:
                     estimated_pose_location = PoseLocation()
-                    for other_marker_pose in target_poses:
+                    for other_marker_pose in self._target_poses:
                         matrix_index = self._find_matrix_input_index(other_marker_pose.target_id, marker_uuid)
 
                         if self._relative_pose_matrix[matrix_index[0]][matrix_index[1]] and other_marker_pose.target_id in self._visible_markers:
@@ -103,7 +103,6 @@ class BoardBuilder:
                     corners_dict[marker_uuid] = invisible_corners_location
 
         return corners_dict
-
 
     def _find_new_reference(self):
         new_reference = PoseLocation()
@@ -181,7 +180,8 @@ class BoardBuilder:
                     new_pose_location.add_matrix(new_matrix_from_reference)
                     self._local_relative_pose_matrix[i][j] = new_pose_location
 
-        occluded_markers_dict = self._get_occluded_markers_pose(self._target_poses)
+        # TO BE REMOVED
+        occluded_markers_dict = self._get_occluded_markers_pose()
 
         return occluded_markers_dict
 
