@@ -2,12 +2,14 @@ import cv2
 from cv2 import aruco
 import numpy as np
 from src.board_builder.pose_location import PoseLocation
+from src.pose_solver.pose_solver2 import PoseSolver2
 
 class BoardBuilder:
 
     def __init__(self):
 
         ### INIT ###
+        self._detector_poses = []
         self._target_poses = []
         self._visible_markers = []
         self._index_counter = 0
@@ -57,6 +59,7 @@ class BoardBuilder:
         pose_index = -1
         other_pose_index = -1
 
+        print(self._index_to_marker_uuid)
         for index in self._index_to_marker_uuid:
             if self._index_to_marker_uuid[index] == pose_uuid:
                 pose_index = index
@@ -95,17 +98,6 @@ class BoardBuilder:
 
         return corners_dict
 
-    def _find_new_reference(self):
-        new_reference = PoseLocation()
-
-        for i in range(len(self._relative_pose_matrix)):
-            for j in range(len(self._relative_pose_matrix)):
-                if self._relative_pose_matrix[i][j] is not None:
-                    new_reference.add_matrix(self._relative_pose_matrix[i][j].get_TMatrix())
-
-        return new_reference.get_TMatrix()
-
-
     ### PUBLIC METHOD ###
     def expand_matrix(self):
         """ Adds one row and one column to the matrix and initializes them to None """
@@ -115,6 +107,10 @@ class BoardBuilder:
             for j in range(size - 1):
                 new_matrix[i][j] = self._relative_pose_matrix[i][j]
         self._relative_pose_matrix = new_matrix
+        print(self._relative_pose_matrix)
+
+    def add_detector_poses(self, detector_poses):
+        self._detector_poses = detector_poses
 
     def add_target_poses(self, target_poses):
         visible_markers = []
@@ -157,24 +153,25 @@ class BoardBuilder:
 
         return self._relative_pose_matrix
 
-    def build_board(self):
+    def build_board(self, pose_solver2):
         """ Builds board using the relative matrix"""
 
-        new_reference = self._find_new_reference()
-        self._local_relative_pose_matrix = [[None for _ in range(len(self._relative_pose_matrix))] for _ in
-                                            range(len(self._relative_pose_matrix))]
 
+        ### GET POSE FROM CAMERA WITHOUT REFERENCE ###
+        detector_poses_by_label = dict()
+        for pose in self._detector_poses:
+            detector_poses_by_label[pose.target_id] = pose.object_to_reference_matrix
+        pose_solver2.set_detector_poses(detector_poses_by_label)
 
-        for i in range(len(self._relative_pose_matrix)):
-            for j in range(len(self._relative_pose_matrix)):
-                if self._relative_pose_matrix[i][j] is not None:
-                    new_pose_location = PoseLocation()
-                    new_matrix_from_reference = self._calculate_relative_transform(new_reference, self._relative_pose_matrix[i][j].get_TMatrix())
-                    new_pose_location.add_matrix(new_matrix_from_reference)
-                    self._local_relative_pose_matrix[i][j] = new_pose_location
+        pose_solver2.update()
+        _, target_poses = pose_solver2.get_poses()
+        self._target_poses = target_poses
 
-        # TO BE REMOVED
+        ### FIND THE OCCLUDED MARKERS POSE WITH ALGORITHM ###
+
+        print("relative_pose", self._relative_pose_matrix)
         occluded_markers_dict = self._get_occluded_markers_pose()
+        print("Occluded marker dict", occluded_markers_dict)
         return occluded_markers_dict
 
         # return self._local_relative_pose_matrix

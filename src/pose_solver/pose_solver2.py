@@ -178,7 +178,7 @@ class PoseExtrapolationQuality:
         return quality
 
 
-class PoseSolver:
+class PoseSolver2:
     """
     Class containing the actual "solver" logic, kept separate from the API.
     """
@@ -215,9 +215,6 @@ class PoseSolver:
         self._intrinsics_by_detector_label = dict()
         self._parameters = PoseSolverParameters()
         self._targets = dict()
-        self._reference_target = TargetMarker(
-            marker_id=0,
-            marker_size=10)
         self._marker_corners_since_update = list()
         self._marker_rayset_by_marker_key = dict()
         self._alpha_poses_by_target_id = dict()
@@ -244,8 +241,6 @@ class PoseSolver:
         marker_id: int,
         marker_diameter: float
     ) -> str:
-        if isinstance(self._reference_target, TargetMarker) and self._reference_target.marker_id == marker_id:
-            raise PoseSolverException(message=f"Marker with id {marker_id} is already the reference.")
         for target_id, target in self._targets.items():
             if isinstance(target, TargetMarker) and marker_id == target.marker_id:
                 raise PoseSolverException(message=f"Marker with id {marker_id} is already being tracked.")
@@ -299,22 +294,6 @@ class PoseSolver:
         intrinsic_parameters: IntrinsicParameters
     ) -> None:
         self._intrinsics_by_detector_label[detector_label] = intrinsic_parameters
-
-    def set_reference_target(
-        self,
-        target: Target
-    ) -> None:
-        if not isinstance(target, TargetMarker):
-            raise NotImplementedError("Only targets that are of type TargetMarker are currently supported.")
-        for tracked_target_id, tracked_target in self._targets.items():
-            if isinstance(tracked_target, TargetMarker) and target.marker_id == tracked_target.marker_id:
-                # TODO: Notify that this tracked target is now the reference
-                self._targets.pop(tracked_target_id)
-                break
-        self._reference_target = target
-
-    def get_targets(self):
-        return self._targets
 
     def _calculate_marker_ray_set(
         self,
@@ -824,14 +803,18 @@ class PoseSolver:
 
         return alpha_translation_reference, alpha_rotation_quaternion
 
+    def set_detector_poses(self, detector_poses_by_label):
+        self._poses_by_detector_label = detector_poses_by_label
+
+    def get_targets(self):
+        return self._targets
+
     def update(self):
         now_timestamp = datetime.datetime.now()
         poses_need_update: bool = self._clear_old_values(now_timestamp)
         poses_need_update |= len(self._marker_corners_since_update) > 0
         if not poses_need_update:
             return
-
-        self._poses_by_detector_label.clear()
         self._poses_by_target_id.clear()
 
         image_point_sets_by_image_key: dict[ImagePointSetsKey, list[MarkerCorners]] = dict()
@@ -841,56 +824,15 @@ class PoseSolver:
             if image_point_sets_key not in image_point_sets_by_image_key:
                 image_point_sets_by_image_key[image_point_sets_key] = list()
             image_point_sets_by_image_key[image_point_sets_key].append(marker_corners)
-
         self._marker_corners_since_update.clear()
 
-        # TODO: Remove this condition with the addition of board
-        if not isinstance(self._reference_target, TargetMarker):
-            return
 
-        # estimate the detector pose relative to the reference target
-        # TODO: Rather than calculate for all point sets *then* see which markers can be found,
-        #       Find the most recent ImagePointSet for each marker,
-        #       then compute reference pose *only* as needed
+
+
+
+
         image_point_set_keys_with_reference_visible: list[ImagePointSetsKey] = list()
         for image_point_sets_key, image_point_sets in image_point_sets_by_image_key.items():
-            detector_label = image_point_sets_key.detector_label
-            image_point_set_reference: MarkerCorners | None = None
-            for image_point_set in image_point_sets:
-                if image_point_set.marker_id == self._reference_target.marker_id:
-                    image_point_set_reference = image_point_set
-                    break
-            if image_point_set_reference is None:
-                continue  # Reference not visible
-            intrinsics: IntrinsicParameters = self._intrinsics_by_detector_label[detector_label]
-            half_width: float = self._reference_target.marker_size / 2.0
-            reference_points: numpy.ndarray = numpy.array([
-                [-half_width,  half_width, 0.0],
-                [ half_width,  half_width, 0.0],
-                [ half_width, -half_width, 0.0],
-                [-half_width, -half_width, 0.0]],
-                dtype="float32")
-            reference_points = numpy.reshape(reference_points, newshape=(1, 4, 3))
-            image_points: numpy.ndarray = numpy.array([image_point_set_reference.points], dtype="float32")
-            image_points = numpy.reshape(image_points, newshape=(1, 4, 2))
-            reference_found: bool
-            rotation_vector: numpy.ndarray
-            translation_vector: numpy.ndarray
-            reference_found, rotation_vector, translation_vector = cv2.solvePnP(
-                objectPoints=reference_points,
-                imagePoints=image_points,
-                cameraMatrix=numpy.asarray(intrinsics.get_matrix(), dtype="float32"),
-                distCoeffs=numpy.asarray(intrinsics.get_distortion_coefficients(), dtype="float32"))
-            if not reference_found:
-                continue  # Camera does not see reference target
-            rotation_vector = rotation_vector.flatten()
-            translation_vector = translation_vector.flatten()
-            reference_to_camera_matrix = numpy.identity(4, dtype="float32")
-            reference_to_camera_matrix[0:3, 0:3] = Rotation.from_rotvec(rotation_vector).as_matrix()
-            reference_to_camera_matrix[0:3, 3] = translation_vector
-            reference_to_detector_matrix = transformation_image_to_opengl(reference_to_camera_matrix)
-            detector_to_reference_opengl = numpy.linalg.inv(reference_to_detector_matrix)
-            self._poses_by_detector_label[detector_label] = Matrix4x4.from_numpy_array(detector_to_reference_opengl)
             image_point_set_keys_with_reference_visible.append(image_point_sets_key)
 
         # Code beyond this point is for tracking targets other than the reference.
@@ -903,8 +845,7 @@ class PoseSolver:
         for image_point_sets_key in image_point_set_keys_with_reference_visible:
             image_point_sets = image_point_sets_by_image_key[image_point_sets_key]
             for image_point_set in image_point_sets:
-                if image_point_set.marker_id != self._reference_target.marker_id:
-                    valid_image_point_sets.append(image_point_set)
+                valid_image_point_sets.append(image_point_set)
 
         # Calculate rays
         # Only the most recent points per detector/marker pair are used,
@@ -935,7 +876,6 @@ class PoseSolver:
                 ray_sets_by_marker_id[marker_id] = list()
             ray_sets_by_marker_id[marker_id].append(marker_ray_set)
 
-
         # Sort rays by the size of quadrilateral.
         # Larger marker size in image suggests more precision.
         # After a certain number of intersections,
@@ -943,6 +883,9 @@ class PoseSolver:
         for marker_id, ray_set_list in ray_sets_by_marker_id.items():
             ray_set_list.sort(key=lambda x: convex_quadrilateral_area(x.image_points), reverse=True)
             ray_sets_by_marker_id[marker_id] = ray_set_list[0:self._parameters.MAXIMUM_RAY_COUNT_FOR_INTERSECTION]
+
+        # {3: [MarkerRaySet(marker_id=3, image_points=[[313.0, 286.0], [274.0, 258.0], [302.0, 221.0], [343.0, 249.0]], image_timestamp=datetime.datetime(2024, 6, 6, 14, 59, 30, 930568), ray_origin_reference=[-50.78833770751953, 32.08375549316406, 138.39178466796875], ray_directions_reference=[[0.329556674938713, -0.4697124603077573, -0.8190009758955661], [0.34131161852527475, -0.4014604041397548, -0.8499034760621155], [0.40819999259530937, -0.40140338445222046, -0.819907364172944], [0.3975979676348893, -0.47204203800334993, -0.7868241019219728]], detector_label='default_camera', detector_to_reference_matrix=Matrix4x4(values=[0.39500340819358826, 0.8184360265731812, -0.41729456186294556, -50.78833770751953, -0.7034105062484741, 0.5616175532341003, 0.435659795999527, 32.08375549316406, 0.5909196138381958, 0.12144222855567932, 0.7975373268127441, 138.39178466796875, 0.0, 0.0, 0.0, 1.0]))],
+        # 1: [MarkerRaySet(marker_id=1, image_points=[[166.0, 242.0], [189.0, 198.0], [234.0, 223.0], [211.0, 265.0]], image_timestamp=datetime.datetime(2024, 6, 6, 14, 59, 30, 930568), ray_origin_reference=[-50.78833770751953, 32.08375549316406, 138.39178466796875], ray_directions_reference=[[0.28664311265966874, -0.2604856968512508, -0.9219451848534387], [0.3584880484562307, -0.24934378228717258, -0.8996188059897532], [0.3593106579864918, -0.32413295335866804, -0.8751192355568318], [0.28893010166132094, -0.3331333170187453, -0.8975196846078185]], detector_label='default_camera', detector_to_reference_matrix=Matrix4x4(values=[0.39500340819358826, 0.8184360265731812, -0.41729456186294556, -50.78833770751953, -0.7034105062484741, 0.5616175532341003, 0.435659795999527, 32.08375549316406, 0.5909196138381958, 0.12144222855567932, 0.7975373268127441, 138.39178466796875, 0.0, 0.0, 0.0, 1.0]))]}
 
         marker_count_by_marker_id: dict[int, int] = dict()
         for marker_id, ray_set_list in ray_sets_by_marker_id.items():
@@ -968,6 +911,7 @@ class PoseSolver:
                     intersections_appear_valid = False
                     print("Warning: intersectable_marker_ids corresponds to no ray set list")
                     break
+
                 for ray_set in ray_set_list:
                     rays.append(Ray(
                         source_point=ray_set.ray_origin_reference,
@@ -991,8 +935,6 @@ class PoseSolver:
         # We estimate the pose of each target based on the calculated intersections
         # and the rays projected from each detector
         for target_id, target in self._targets.items():
-            if target_id == str(self._reference_target.marker_id):
-                continue  # everything is expressed relative to the reference...
             marker_ids_in_target: list[int]
             if isinstance(target, TargetMarker):
                 marker_ids_in_target = [target.marker_id]
