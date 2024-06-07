@@ -12,10 +12,9 @@ import numpy as np
 import datetime
 from typing import Final
 from src.common.structures import IntrinsicParameters
-from src.pose_solver.pose_solver2 import PoseSolver2
-from src.pose_solver.structures import MarkerCorners, TargetMarker, Target
+from src.pose_solver.structures import MarkerCorners, TargetMarker
 from src.board_builder import BoardBuilder
-from src.board_builder import BoardBuilder2
+from src.board_builder import BoardBuilderPoseSolver
 
 
 logger = logging.getLogger(__name__)
@@ -144,16 +143,14 @@ class BoardBuilderPanel(BasePanel):
                                     + self.DETECTOR_GREEN_INTRINSICS.tangential_distortion_coefficients)
 
         ### POSE SOLVER INIT ###
-        self.pose_solver2 = PoseSolver2()
-        self.pose_solver2.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
         self._target_poses = []
         self._detector_poses = []
 
         ### BOARD BUILDER INIT ###
         self.board_builder = BoardBuilder()
-        self.board_builder2 = BoardBuilder2()
-        self.board_builder2.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
-        self.board_builder2.set_reference_target(TargetMarker(
+        self.pose_solver = BoardBuilderPoseSolver()
+        self.pose_solver.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
+        self.pose_solver.set_reference_target(TargetMarker(
             marker_id=self.REFERENCE_MARKER_ID,
             marker_size=self.MARKER_SIZE_MM))
         self.MARKER_MIDDLE_TO_EDGE_IN_PIXELS = 20
@@ -192,29 +189,31 @@ class BoardBuilderPanel(BasePanel):
         aruco.drawDetectedMarkers(frame, corners, ids)
 
         if self._setting_reference:
+            reference_visible = False
             if ids is not None:
                 ### ADD CORNERS ###
                 for i, corner in enumerate(corners):
-                    marker_corners = MarkerCorners(
-                        detector_label=self.DETECTOR_GREEN_NAME,
-                        marker_id=int(ids[i][0]),
-                        points=corner[0].tolist(),
-                        timestamp=datetime.datetime.now()
-                    )
-                    self.board_builder2.add_marker_corners([marker_corners])
+                    if ids[i][0] == self.REFERENCE_MARKER_ID:
+                        marker_corners = MarkerCorners(
+                            detector_label=self.DETECTOR_GREEN_NAME,
+                            marker_id=int(ids[i][0]),
+                            points=corner[0].tolist(),
+                            timestamp=datetime.datetime.now()
+                        )
+                        self.pose_solver.add_marker_corners([marker_corners])
+                        reference_visible = True
 
                 ### DETECTOR POSE ###
-                detector_poses_by_label = dict()
-                self.board_builder2.update()
-                self.board_builder2.estimate_detector_pose_relative_to_reference()
-                detector_poses = self.board_builder2.get_poses()
-                for pose in detector_poses:
-                    detector_poses_by_label[pose.target_id] = pose.object_to_reference_matrix
-                self._detector_poses = detector_poses_by_label
+                if reference_visible:
+                    detector_poses_by_label = dict()
+                    detector_poses = self.pose_solver.get_detector_poses()
+                    for pose in detector_poses:
+                        detector_poses_by_label[pose.target_id] = pose.object_to_reference_matrix
+                    self._detector_poses = detector_poses_by_label
+                    self.pose_solver.set_detector_poses(self._detector_poses)
 
         if self._collecting_data:
             self.solve_pose(ids, corners)
-            #print(self._target_poses)
             if self._detector_poses is not None:
                 self.board_builder.add_detector_poses(self._detector_poses)
 
@@ -235,7 +234,10 @@ class BoardBuilderPanel(BasePanel):
 
             if self._target_poses is not None:
                 self.board_builder.add_target_poses(self._target_poses)
-                corners_dict = self.board_builder.build_board(self.pose_solver2)
+                corners_dict = self.board_builder.build_board()
+
+
+                ### DRAW MARKERS ###
                 for index, marker_uuid in enumerate(corners_dict):
                     color_index = index % len(self.marker_color)
                     self.draw_corners_location(corners_dict[marker_uuid], frame, self.marker_color[color_index])
@@ -292,29 +294,30 @@ class BoardBuilderPanel(BasePanel):
 
     def solve_pose(self, ids, corners):
         """ Given visible Ids and their corners, uses pose_solver to return the pose in the reference frame """
+        markers_visible = False
         if ids is not None:
             ### ADD TARGET MARKER ###
             for marker_id in range(len(ids)):
                 if ids[marker_id][0] != self.REFERENCE_MARKER_ID:
-                    if self.pose_solver2.try_add_target_marker(ids[marker_id][0], int(self.MARKER_SIZE_MM)):
+                    if self.pose_solver.try_add_target_marker(ids[marker_id][0], int(self.MARKER_SIZE_MM)):
                         self.board_builder.expand_matrix()
 
             ### ADD CORNERS ###
             for i, corner in enumerate(corners):
-                marker_corners = MarkerCorners(
-                    detector_label=self.DETECTOR_GREEN_NAME,
-                    marker_id=int(ids[i][0]),
-                    points=corner[0].tolist(),
-                    timestamp=datetime.datetime.now()
-                )
-                self.pose_solver2.add_marker_corners([marker_corners])
+                if int(ids[i][0]) != self.REFERENCE_MARKER_ID:
+                    marker_corners = MarkerCorners(
+                        detector_label=self.DETECTOR_GREEN_NAME,
+                        marker_id=int(ids[i][0]),
+                        points=corner[0].tolist(),
+                        timestamp=datetime.datetime.now()
+                    )
+                    self.pose_solver.add_marker_corners([marker_corners])
+                    markers_visible = True
 
             ### SOLVE POSE ###
-            self.pose_solver2.set_detector_poses(self._detector_poses)
-            self.pose_solver2.update()
-            _, target_poses = self.pose_solver2.get_poses()
-            self._target_poses = target_poses
-            # print(target_poses)
+            if markers_visible:
+                target_poses = self.pose_solver.get_target_poses()
+                self._target_poses = target_poses
 
     def calculate_corners_location(self, T_matrix, local_corners):
         """ Given a matrix transformation, find the four corners """

@@ -1,6 +1,10 @@
-from .exceptions import \
+from src.pose_solver.exceptions import \
     PoseSolverException
-from .structures import \
+from src.common.structures import \
+    IntrinsicParameters, \
+    Matrix4x4, \
+    Pose
+from src.pose_solver.structures import \
     MarkerCorners, \
     MarkerRaySet, \
     PoseData, \
@@ -8,27 +12,21 @@ from .structures import \
     Target, \
     TargetMarker, \
     PoseSolverParameters
-from .util import \
+from src.pose_solver.util import \
     average_quaternion, \
-    average_vector, \
+    transformation_image_to_opengl, \
     convex_quadrilateral_area, \
     closest_intersection_between_n_lines, \
     IterativeClosestPointParameters, \
     iterative_closest_point_for_points_and_rays, \
     register_corresponding_points, \
-    transformation_image_to_opengl, \
     vector_image_to_opengl
-from src.common.structures import \
-    IntrinsicParameters, \
-    Matrix4x4, \
-    Pose
 import cv2
 import cv2.aruco
 import datetime
 import numpy
 from scipy.spatial.transform import Rotation
-from typing import Callable, Final, Optional, TypeVar
-from pydantic import BaseModel, Field
+from typing import Callable, TypeVar
 import uuid
 
 KeyType = TypeVar("KeyType")
@@ -40,9 +38,9 @@ class ImagePointSetsKey:
     timestamp: datetime.datetime
 
     def __init__(
-        self,
-        detector_label: str,
-        timestamp: datetime.datetime
+            self,
+            detector_label: str,
+            timestamp: datetime.datetime
     ):
         self.detector_label = detector_label
         self.timestamp = timestamp
@@ -81,7 +79,6 @@ class MarkerKey:
     def __str__(self):
         return str("(" + self.detector_label + "," + str(self.marker_id) + ")")
 
-
 class CornerSetReference:
     marker_id: int
     corners: list[list[float]]  # in reference coordinate system
@@ -96,7 +93,6 @@ class CornerSetReference:
         self.marker_id = marker_id
         self.corners = corners
         self.ray_sets = ray_sets
-
 
 class TargetDepthKey:
     target_id: uuid.UUID
@@ -120,7 +116,6 @@ class TargetDepthKey:
 
     def __hash__(self):
         return hash(self._key())
-
 
 class TargetDepth:
     target_id: uuid.UUID
@@ -147,73 +142,29 @@ class TargetDepth:
     ):
         return (query_timestamp - target_depth.estimate_timestamp).total_seconds()
 
-
-class PoseExtrapolationQuality:
-    plausible: bool
-    score: float
-
-    @staticmethod
-    def quality_of_pose_extrapolation(
-        expected_translation: numpy.array,
-        expected_rotation_quaternion: numpy.array,
-        sample_translation: numpy.array,
-        sample_rotation_quaternion: numpy.array,
-        maximum_relative_translation_magnitude: float,
-        maximum_relative_rotation_magnitude_degrees: float
-    ):  # -> PoseExtrapolationQuality
-        expected_rotation = Rotation.from_quat(expected_rotation_quaternion)
-        expected_inv_rotation = Rotation.inv(expected_rotation)
-        relative_translation = sample_translation - expected_translation
-        relative_translation_magnitude = numpy.linalg.norm(relative_translation)
-        relative_rotation = expected_inv_rotation * Rotation.from_quat(sample_rotation_quaternion)
-        relative_rotation_vector_degrees = relative_rotation.as_rotvec() * 180.0 / numpy.pi
-        relative_rotation_magnitude_degrees = numpy.linalg.norm(relative_rotation_vector_degrees)
-        translation_score = 1.0 - \
-            (relative_translation_magnitude / maximum_relative_translation_magnitude)
-        rotation_score = 1.0 - \
-            (relative_rotation_magnitude_degrees / maximum_relative_rotation_magnitude_degrees)
-        quality = PoseExtrapolationQuality()
-        quality.plausible = (translation_score >= 0.0 and rotation_score >= 0.0)
-        quality.score = min(translation_score, rotation_score)
-        return quality
-
-
-class PoseSolver2:
+class BoardBuilderPoseSolver:
     """
     Class containing the actual "solver" logic, kept separate from the API.
     """
+
     _intrinsics_by_detector_label: dict[str, IntrinsicParameters]
     _targets: dict[uuid.UUID, Target]
 
     _marker_corners_since_update: list[MarkerCorners]
 
-    # Not all images arrive at the same time.
-    # This structure provides a means for storing ray information between frames,
-    # so that the frames do not need to arrive at the same time to resolve the pose.
     _marker_rayset_by_marker_key: dict[MarkerKey, MarkerRaySet]
 
-    # These variables store histories of poses, generally for denoising or resolving pose ambiguities
-    _alpha_poses_by_target_id: dict[uuid.UUID, list[PoseData]]  # Found from a single camera
-    _target_extrapolation_poses_by_target_id: dict[uuid.UUID, list[PoseData]]  # Used for extrapolation, single camera
     _poses_by_target_id: dict[uuid.UUID, PoseData]
     _poses_by_detector_label: dict[str, Matrix4x4]
-    _target_depths_by_target_depth_key: dict[TargetDepthKey, list[TargetDepth]]
 
-    _minimum_marker_age_before_removal_seconds: float
-
-    def __init__(
-        self
-    ):
-        # TODO: Endpoint to handle detector sending data. Each time a detector adds points etc,
-        #       We must check the dict to see if it has been registered or not.
-
-        # TODO: Reference can be a board, temporarily hardcoded to ArUco marker with ID 0.
-
-        # TODO: A means of adding target markers (?)
+    def __init__(self):
 
         self._intrinsics_by_detector_label = dict()
         self._parameters = PoseSolverParameters()
         self._targets = dict()
+        self._reference_target = TargetMarker(
+            marker_id=0,
+            marker_size=10)
         self._marker_corners_since_update = list()
         self._marker_rayset_by_marker_key = dict()
         self._alpha_poses_by_target_id = dict()
@@ -228,6 +179,8 @@ class PoseSolver2:
             self._parameters.POSE_SINGLE_CAMERA_NEAREST_LIMIT_RAY_AGE_SECONDS,
             self._parameters.POSE_SINGLE_CAMERA_DEPTH_LIMIT_AGE_SECONDS,
             self._parameters.POSE_MULTI_CAMERA_LIMIT_RAY_AGE_SECONDS])
+
+        self._now_timestamp = None
 
     def add_marker_corners(
         self,
@@ -267,25 +220,29 @@ class PoseSolver2:
         except PoseSolverException:
             return False
 
-    def get_poses(
+    def get_detector_poses(
         self
-    ) -> tuple[list[Pose], list[Pose]]:
-        """
-        Returns detector_poses, target_poses
-        """
+    ) -> list[Pose]:
+        self._estimate_detector_pose_relative_to_reference()
         detector_poses: list[Pose] = [
             Pose(
                 target_id=detector_label,
                 object_to_reference_matrix=pose,
-                solver_timestamp_utc_iso8601=str(datetime.datetime.utcnow().isoformat()))  # TODO: real value
+                solver_timestamp_utc_iso8601=str(datetime.datetime.utcnow().isoformat()))
             for detector_label, pose in self._poses_by_detector_label.items()]
+        return detector_poses
+
+    def get_target_poses(
+        self
+    ) -> list[Pose]:
+        self._estimate_target_pose_relative_to_reference()
         target_poses: list[Pose] = [
             Pose(
                 target_id=str(target_id),
                 object_to_reference_matrix=pose.object_to_reference_matrix,
-                solver_timestamp_utc_iso8601=str(pose.newest_timestamp().isoformat()))  # TODO: real value
+                solver_timestamp_utc_iso8601=str(pose.newest_timestamp().isoformat()))
             for target_id, pose in self._poses_by_target_id.items()]
-        return detector_poses, target_poses
+        return target_poses
 
     def set_intrinsic_parameters(
         self,
@@ -293,6 +250,21 @@ class PoseSolver2:
         intrinsic_parameters: IntrinsicParameters
     ) -> None:
         self._intrinsics_by_detector_label[detector_label] = intrinsic_parameters
+
+    def set_reference_target(
+        self,
+        target: Target
+    ) -> None:
+        if not isinstance(target, TargetMarker):
+            raise NotImplementedError("Only targets that are of type TargetMarker are currently supported.")
+        for tracked_target_id, tracked_target in self._targets.items():
+            if isinstance(tracked_target, TargetMarker) and target.marker_id == tracked_target.marker_id:
+                self._targets.pop(tracked_target_id)
+                break
+        self._reference_target = target
+
+    def set_detector_poses(self, detector_poses_by_label):
+        self._poses_by_detector_label = detector_poses_by_label
 
     def _calculate_marker_ray_set(
         self,
@@ -332,49 +304,6 @@ class PoseSolver2:
             ray_origin_reference=ray_origin_reference,
             ray_directions_reference=ray_directions)
 
-    def _calculate_reprojection_error_for_pose(
-        self,
-        ray_set: MarkerRaySet,
-        object_points_target: list[list[float]],
-        object_to_reference_translation: list[float],
-        object_to_reference_rotation_quaternion: list[float]
-    ) -> float:
-        object_to_reference_matrix = numpy.identity(4, dtype="float32")
-        object_to_reference_matrix[0:3, 0:3] = Rotation.from_quat(object_to_reference_rotation_quaternion).as_matrix()
-        object_to_reference_matrix[0:3, 3] = object_to_reference_translation
-        object_points_reference = numpy.empty((len(object_points_target), 3), dtype="float32")
-        for object_point_index, object_point_target in enumerate(object_points_target):
-            object_point_reference = numpy.matmul(
-                object_to_reference_matrix,
-                [object_point_target[0], object_point_target[1], object_point_target[2], 1.0])
-            object_points_reference[object_point_index, 0:3] = object_point_reference[0:3]
-        detector_label: str = ray_set.detector_label
-        reference_to_detector_matrix: Matrix4x4 = ray_set.detector_to_reference_matrix
-        reference_to_detector: numpy.ndarray = reference_to_detector_matrix.as_numpy_array()
-        reference_to_detector_rotation_vector = \
-            Rotation.as_rotvec(Rotation.from_matrix(reference_to_detector[0:3, 0:3]))
-        reference_to_detector_translation = reference_to_detector[0:3, 3]
-        camera_matrix = numpy.array(self._intrinsics_by_detector_label[detector_label].get_matrix(), dtype="float32")
-        camera_distortion_coefficients = \
-            numpy.array(self._intrinsics_by_detector_label[detector_label].get_distortion_coefficients(),
-                        dtype="float32")
-        project_points_result = cv2.projectPoints(
-            objectPoints=object_points_reference,
-            rvec=reference_to_detector_rotation_vector,
-            tvec=reference_to_detector_translation,
-            cameraMatrix=camera_matrix,
-            distCoeffs=camera_distortion_coefficients)
-        projected_points = project_points_result[0]
-        sum_reprojection_errors_squared: float = 0.0
-        for point_index, image_point in enumerate(ray_set.image_points):
-            reprojection_error_for_point = \
-                numpy.linalg.norm(projected_points[point_index, 0, 0:2] - image_point)
-            sum_reprojection_errors_squared += reprojection_error_for_point ** 2
-        mean_reprojection_errors_squared: float = sum_reprojection_errors_squared / len(object_points_target)
-        rms_reprojection_error = numpy.sqrt(mean_reprojection_errors_squared)
-        return rms_reprojection_error
-
-    # noinspection DuplicatedCode
     def _clear_old_values(
         self,
         query_timestamp: datetime.datetime
@@ -425,10 +354,10 @@ class PoseSolver2:
 
     @staticmethod
     def _clear_old_values_from_dict_of_lists(
-        input_dict: dict[KeyType, list[ValueType]],
-        age_from_value_function: Callable[[ValueType, datetime.datetime], float],
-        query_timestamp: datetime.datetime,
-        maximum_age_seconds: float
+            input_dict: dict[KeyType, list[ValueType]],
+            age_from_value_function: Callable[[ValueType, datetime.datetime], float],
+            query_timestamp: datetime.datetime,
+            maximum_age_seconds: float
     ) -> tuple[dict[KeyType, list[ValueType]], bool]:  # modified_dictionary, changes_found
         changed: bool = False
         output_dict: dict[KeyType, list[ValueType]] = dict()
@@ -459,88 +388,6 @@ class PoseSolver2:
                 [half_width, -half_width, 0.0],
                 [-half_width, -half_width, 0.0]]
         return points
-
-    @staticmethod
-    def _denoise_is_pose_pair_outlier(
-        pose_a: PoseData,
-        pose_b: PoseData,
-        parameters: PoseSolverParameters
-    ) -> bool:
-
-        position_a = pose_a.object_to_reference_matrix[0:3, 3]
-        position_b = pose_b.object_to_reference_matrix[0:3, 3]
-        distance_millimeters = numpy.linalg.norm(position_a - position_b)
-        if distance_millimeters > parameters.DENOISE_OUTLIER_DISTANCE_MILLIMETERS:
-            return True
-
-        orientation_a = pose_a.object_to_reference_matrix[0:3, 0:3]
-        orientation_b = pose_b.object_to_reference_matrix[0:3, 0:3]
-        rotation_a_to_b = numpy.matmul(orientation_a, numpy.linalg.inv(orientation_b))
-        angle_degrees = numpy.linalg.norm(Rotation.from_matrix(rotation_a_to_b).as_rotvec())
-        if angle_degrees > parameters.DENOISE_OUTLIER_DISTANCE_MILLIMETERS:
-            return True
-
-        return False
-
-    # Take an average of recent poses, with detection and removal of outliers
-    # TODO: Currently not used - but it's probably a good feature to have
-    def _denoise_detector_to_reference_pose(
-        self,
-        object_label: str,
-        raw_poses: list[PoseData]  # In order, oldest to newest
-    ) -> PoseData:
-        most_recent_pose = raw_poses[-1]
-        max_storage_size: int = self._parameters.DENOISE_STORAGE_SIZE
-        filter_size: int = self._parameters.DENOISE_FILTER_SIZE
-        if filter_size <= 1 or max_storage_size <= 1:
-            return most_recent_pose  # trivial case
-
-        # find a consistent range of recent indices
-        poses: list[PoseData] = list(raw_poses)
-        poses.reverse()  # now they are sorted so that the first element is most recent
-        required_starting_streak: int = self._parameters.DENOISE_REQUIRED_STARTING_STREAK
-        starting_index: int = -1  # not yet known, we want to find this
-        if required_starting_streak <= 1:
-            starting_index = 0  # trivial case
-        else:
-            current_inlier_streak: int = 1  # comparison always involves a streak of size 1 or more
-            for pose_index in range(1, len(raw_poses)):
-                if self._denoise_is_pose_pair_outlier(poses[pose_index - 1], poses[pose_index]):
-                    current_inlier_streak = 1
-                    continue
-                current_inlier_streak += 1
-                if current_inlier_streak >= required_starting_streak:
-                    starting_index = pose_index - required_starting_streak + 1
-                    break
-
-        if starting_index < 0:
-            if len(poses) >= max_storage_size:  # There appear to be enough poses, so data seems to be inconsistent
-                print(
-                    "Warning: Can't find consistent pose streak. "
-                    "Will use most recent raw pose for object " + object_label + ".")
-            return most_recent_pose
-
-        poses_to_average: list[PoseData] = [poses[starting_index]]
-        for pose_index in range(starting_index + 1, len(poses)):
-            if (not self._denoise_is_pose_pair_outlier(poses[pose_index - 1], poses[pose_index])) or \
-               (not self._denoise_is_pose_pair_outlier(poses[starting_index], poses[pose_index])):
-                poses_to_average.append(poses[pose_index])
-                if len(poses_to_average) > filter_size:
-                    break
-
-        translations = [list(pose.object_to_reference_matrix[0:3, 3])
-                        for pose in poses_to_average]
-        orientations = [list(Rotation.from_matrix(pose.object_to_reference_matrix[0:3, 0:3]).as_quat(canonical=True))
-                        for pose in poses_to_average]
-        filtered_translation = average_vector(translations)
-        filtered_orientation = average_quaternion(orientations)
-        filtered_object_to_reference_matrix = numpy.identity(4, dtype="float32")
-        filtered_object_to_reference_matrix[0:3, 0:3] = Rotation.from_quat(filtered_orientation).as_matrix()
-        filtered_object_to_reference_matrix[0:3, 3] = filtered_translation
-        return PoseData(
-            object_label=object_label,
-            object_to_reference_matrix=filtered_object_to_reference_matrix,
-            ray_sets=most_recent_pose.ray_sets)
 
     def _estimate_target_pose_from_ray_set(
         self,
@@ -586,236 +433,14 @@ class PoseSolver2:
         quaternion = list(Rotation.from_matrix(object_to_reference_matrix[0:3, 0:3]).as_quat(canonical=True))
         return position, quaternion
 
-    # Specialized version of _estimate_target_pose_from_ray_set for handling the pose ambiguity problem
-    # noinspection PyUnreachableCode
-    def _estimate_target_pose_from_ray_set_and_single_marker_id(
-        self,
-        ray_set: MarkerRaySet,
-        target_id: uuid.UUID,
-        target: Target
-    ) -> tuple[list[float], list[float]]:
-        assert (len(ray_set.ray_directions_reference) == 4)
-
-        alpha_translation_reference, alpha_rotation_quaternion = self._estimate_target_pose_from_ray_set(
-            ray_set=ray_set,
-            target=target)
-
-        # We don't know if the pose above is in the correct sense of the optical illusion problem.
-        # We calculate the "other" version of the pose, then determine which is more likely to be correct.
-        # Let "alpha" indicate the position obtained above, and "beta" indicate the other version
-        alpha_pose_nparray: numpy.ndarray = numpy.identity(4, dtype="float32")
-        alpha_pose_nparray[0:3, 0:3] = Rotation.from_quat(alpha_rotation_quaternion).as_matrix()
-        alpha_pose_nparray[0:3, 3] = alpha_translation_reference
-        alpha_pose_matrix: Matrix4x4 = Matrix4x4.from_numpy_array(alpha_pose_nparray)
-        alpha_pose = PoseData(
-            target_id=target_id,
-            object_to_reference_matrix=alpha_pose_matrix,
-            ray_sets=[ray_set])
-        if target_id not in self._alpha_poses_by_target_id:
-            self._alpha_poses_by_target_id[target_id] = list()
-        self._alpha_poses_by_target_id[target_id].append(alpha_pose)
-
-        # We need the original object points
-        # First make sure they form a square (with reasonable tolerance)
-        # because if not, then the following math becomes suspect...
-        object_points = self._corresponding_point_list_in_target(target_id=target_id)
-        if len(object_points) != 4:
-            raise RuntimeError("Input marker points is of incorrect length, expected 4 got " + str(len(object_points)))
-        point_top_left = numpy.array(object_points[0])
-        point_top_right = numpy.array(object_points[1])
-        point_bottom_right = numpy.array(object_points[2])
-        point_bottom_left = numpy.array(object_points[3])
-        marker_side = numpy.linalg.norm(point_top_right - point_top_left)
-        if marker_side <= PoseSolverParameters.EPSILON:
-            raise RuntimeError("Input marker points must define a square of side length larger than zero.")
-        marker_diag = numpy.sqrt(numpy.square(marker_side) * 2)
-        if abs(numpy.linalg.norm(point_bottom_right - point_top_right) - marker_side) > self._parameters.EPSILON or \
-           abs(numpy.linalg.norm(point_bottom_left - point_bottom_right) - marker_side) > self._parameters.EPSILON or \
-           abs(numpy.linalg.norm(point_top_left - point_bottom_left) - marker_side) > self._parameters.EPSILON or \
-           abs(numpy.linalg.norm(point_top_left - point_bottom_right) - marker_diag) > self._parameters.EPSILON or \
-           abs(numpy.linalg.norm(point_top_right - point_bottom_left) - marker_diag) > self._parameters.EPSILON:
-            raise RuntimeError("Input marker points do not form a square.")
-
-        # Calculate the rotation that creates the beta version of the pose
-        axis_x_marker = \
-            numpy.asarray(object_points[3], dtype="float32") - numpy.asarray(object_points[2], dtype="float32")
-        axis_y_marker = \
-            numpy.asarray(object_points[3], dtype="float32") - numpy.asarray(object_points[0], dtype="float32")
-        axis_z_marker = numpy.cross(axis_x_marker, axis_y_marker)  # pointed out from marker
-        rotation_alpha_to_reference_matrix = Rotation.from_quat(alpha_rotation_quaternion).as_matrix()
-        alpha_axis_z_reference = numpy.matmul(rotation_alpha_to_reference_matrix, axis_z_marker)
-        alpha_normal_reference = alpha_axis_z_reference / numpy.linalg.norm(alpha_axis_z_reference)
-        marker_centroid_marker = numpy.array(average_vector(object_points), dtype="float32")
-        marker_centroid_reference = \
-            numpy.matmul(rotation_alpha_to_reference_matrix, marker_centroid_marker) + alpha_translation_reference
-        ray_origin_reference = numpy.array(ray_set.ray_origin_reference, dtype="float32")
-        marker_to_detector_reference = ray_origin_reference - marker_centroid_reference
-        marker_to_ray_unit_reference = marker_to_detector_reference / numpy.linalg.norm(marker_to_detector_reference)
-        rotation_alpha_to_reference_vector = numpy.cross(alpha_normal_reference, marker_to_ray_unit_reference)
-        rotation_alpha_to_reference_magnitude_degrees = \
-            numpy.linalg.norm(rotation_alpha_to_reference_vector) * 180.0 / numpy.pi
-        if rotation_alpha_to_reference_magnitude_degrees <= EPSILON:
-            # In the rare event where the view is perpendicular,
-            # there is little point in computing beta since it will be almost identical to alpha
-            return alpha_translation_reference, alpha_rotation_quaternion
-
-        # The beta pose is an additional rotation so that the marker appears the same in the image
-        # This seems like a bit of a simplification, and there may be a more precise way to calculate it
-        rotation_reference_to_beta = rotation_alpha_to_reference_vector
-
-        rotation_alpha_to_beta_vector = rotation_alpha_to_reference_vector + rotation_reference_to_beta
-        rotation_alpha_to_beta = Rotation.from_rotvec(rotation_alpha_to_beta_vector)
-        beta_rotation_quaternion = \
-            (rotation_alpha_to_beta * Rotation.from_quat(alpha_rotation_quaternion)).as_quat(canonical=True)
-
-        # Rotation about marker_centroid_reference, since rotation axis passes through it
-        rotation_alpha_to_beta_matrix = rotation_alpha_to_beta.as_matrix()
-        reference_to_alpha_translation_vector = \
-            numpy.array(alpha_translation_reference, dtype="float32") - marker_centroid_reference
-        reference_to_beta_translation_vector = numpy.matmul(
-            rotation_alpha_to_beta_matrix, reference_to_alpha_translation_vector)
-        beta_translation_reference = marker_centroid_reference + reference_to_beta_translation_vector
-
-        # noinspection PyTypeChecker
-        beta_rotation_quaternion = list(beta_rotation_quaternion.tolist())
-        # noinspection PyTypeChecker
-        beta_translation_reference = list(beta_translation_reference.tolist())
-
-        alpha_pose_quality: Optional[PoseExtrapolationQuality] = None
-        beta_pose_quality: Optional[PoseExtrapolationQuality] = None
-        if rotation_alpha_to_reference_magnitude_degrees >= \
-           self._parameters.POSE_SINGLE_CAMERA_EXTRAPOLATION_MINIMUM_SURFACE_NORMAL_ANGLE_DEGREES:
-            # Use velocity and angular velocity over recent poses to extrapolate pose,
-            # determine which of alpha and beta are closest (within threshold)
-            recent_poses: list[PoseData] = list()
-            target_label: str = str(target_id)
-            if target_label in self._target_extrapolation_poses_by_target_id:
-                for pose in self._target_extrapolation_poses_by_target_id[target.target_label]:
-                    if (ray_set.image_timestamp - pose.oldest_timestamp()).total_seconds() <= \
-                       self._parameters.POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_RAY_AGE_SECONDS:
-                        recent_poses.append(pose)
-            if len(recent_poses) >= 4:  # Size of quaternion, minimum for solving linear equation
-                oldest_pose_timestamp = sorted([pose.oldest_timestamp() for pose in recent_poses])[0]
-                ts = numpy.empty((len(recent_poses), 1), dtype="float32")
-                bs_quaternion = numpy.empty((len(recent_poses), 4), dtype="float32")
-                bs_translation = numpy.empty((len(recent_poses), 3), dtype="float32")
-                for pose_index, pose in enumerate(recent_poses):
-                    ts[pose_index, 0] = (pose.oldest_timestamp() - oldest_pose_timestamp).total_seconds()
-                    pose_quaternion = (Rotation
-                                       .from_matrix(pose.object_to_reference_matrix[0:3, 0:3])
-                                       .as_quat(canonical=True))
-                    bs_quaternion[pose_index, 0:4] = pose_quaternion
-                    bs_translation[pose_index, 0:3] = pose.object_to_reference_matrix[0:3, 3]
-                maximum_order: int = 2
-                a_matrix = numpy.ones((len(recent_poses), (maximum_order+1)), dtype="float32")
-                for pose_index in range(0, len(recent_poses)):
-                    for order in range(1, maximum_order+1):
-                        a_matrix[pose_index, order] = ts[pose_index] ** order
-                coefficients_quaternion = numpy.linalg.lstsq(a_matrix, bs_quaternion, rcond=None)[0]
-                coefficients_translation = numpy.linalg.lstsq(a_matrix, bs_translation, rcond=None)[0]
-                # Note in coefficients: order = 0..maximum_order
-                extrapolation_t = (ray_set.image_timestamp - oldest_pose_timestamp).total_seconds()
-                extrapolation_a = numpy.ones((1, (maximum_order+1)), dtype="float32")
-                for order in range(1, (maximum_order+1)):
-                    extrapolation_a[0, order] = extrapolation_t ** order
-                extrapolated_rotation_quaternion = numpy.matmul(extrapolation_a, coefficients_quaternion)
-                extrapolated_rotation_quaternion = \
-                    extrapolated_rotation_quaternion / numpy.linalg.norm(extrapolated_rotation_quaternion)
-                extrapolated_translation_reference = numpy.matmul(extrapolation_a, coefficients_translation)
-                alpha_pose_quality = PoseExtrapolationQuality.quality_of_pose_extrapolation(
-                    expected_translation=extrapolated_translation_reference,
-                    expected_rotation_quaternion=extrapolated_rotation_quaternion,
-                    sample_translation=numpy.array(alpha_translation_reference, dtype="float32"),
-                    sample_rotation_quaternion=numpy.array(alpha_rotation_quaternion, dtype="float32"),
-                    maximum_relative_translation_magnitude=PoseSolverParameters.POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_DISTANCE,
-                    maximum_relative_rotation_magnitude_degrees=POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_ANGLE_DEGREES)
-                beta_pose_quality = PoseExtrapolationQuality.quality_of_pose_extrapolation(
-                    expected_translation=extrapolated_translation_reference,
-                    expected_rotation_quaternion=extrapolated_rotation_quaternion,
-                    sample_translation=numpy.array(beta_translation_reference, dtype="float32"),
-                    sample_rotation_quaternion=numpy.array(beta_rotation_quaternion, dtype="float32"),
-                    maximum_relative_translation_magnitude=PoseSolverParameters.POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_DISTANCE,
-                    maximum_relative_rotation_magnitude_degrees=PoseSolverParameters.POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_ANGLE_DEGREES)
-        else:
-            if isinstance(target, TargetMarker):
-                target_label = str(target.marker_id)
-            else:
-                raise NotImplementedError("Only targets that are markers are supported.")
-            if len(self._alpha_poses_by_target_id[target_label]) > 4:
-                # Look at the alpha poses over some recent duration, and then choose
-                # alpha or beta that is (on average) closest to them,
-                # optionally weighing more heavily recent measurements.
-                alpha_translations_reference: list[list[float]] = list()
-                alpha_rotations_quaternion: list[list[float]] = list()
-                for alpha_pose in self._alpha_poses_by_target_id[target.target_label]:
-                    if (ray_set.image_timestamp - alpha_pose.oldest_timestamp()).total_seconds() <= \
-                       self._parameters.POSE_SINGLE_CAMERA_NEAREST_LIMIT_RAY_AGE_SECONDS:
-                        alpha_translations_reference.append(list(
-                            alpha_pose.object_to_reference_matrix[0:3, 3].tolist()))
-                        # noinspection PyTypeChecker
-                        alpha_rotations_quaternion.append(list(
-                            Rotation
-                            .from_matrix(alpha_pose.object_to_reference_matrix[0:3, 0:3])
-                            .as_quat(canonical=True)
-                            .tolist()))
-                average_alpha_translation_reference = average_vector(alpha_translations_reference)
-                average_alpha_rotation_quaternion = average_quaternion(alpha_rotations_quaternion)
-                alpha_pose_quality = PoseExtrapolationQuality.quality_of_pose_extrapolation(
-                    expected_translation=numpy.array(average_alpha_translation_reference, dtype="float32"),
-                    expected_rotation_quaternion=numpy.array(average_alpha_rotation_quaternion, dtype="float32"),
-                    sample_translation=numpy.array(alpha_translation_reference, dtype="float32"),
-                    sample_rotation_quaternion=numpy.array(alpha_rotation_quaternion, dtype="float32"),
-                    maximum_relative_translation_magnitude=POSE_SINGLE_CAMERA_NEAREST_LIMIT_DISTANCE,
-                    maximum_relative_rotation_magnitude_degrees=POSE_SINGLE_CAMERA_NEAREST_LIMIT_ANGLE_DEGREES)
-                beta_pose_quality = PoseExtrapolationQuality.quality_of_pose_extrapolation(
-                    expected_translation=numpy.array(average_alpha_translation_reference, dtype="float32"),
-                    expected_rotation_quaternion=numpy.array(average_alpha_rotation_quaternion, dtype="float32"),
-                    sample_translation=numpy.array(beta_translation_reference, dtype="float32"),
-                    sample_rotation_quaternion=numpy.array(beta_rotation_quaternion, dtype="float32"),
-                    maximum_relative_translation_magnitude=self._parameters.POSE_SINGLE_CAMERA_NEAREST_LIMIT_DISTANCE,
-                    maximum_relative_rotation_magnitude_degrees=self._parameters.POSE_SINGLE_CAMERA_NEAREST_LIMIT_ANGLE_DEGREES)
-
-        if alpha_pose_quality is not None and beta_pose_quality is not None:
-            if alpha_pose_quality.plausible and beta_pose_quality.plausible:
-                if alpha_pose_quality.score >= beta_pose_quality.score:
-                    return alpha_translation_reference, alpha_rotation_quaternion
-                else:
-                    return beta_translation_reference, beta_rotation_quaternion
-            elif alpha_pose_quality.plausible:
-                return alpha_translation_reference, alpha_rotation_quaternion
-            elif beta_pose_quality.plausible:
-                return beta_translation_reference, beta_rotation_quaternion
-
-        alpha_reprojection_error = self._calculate_reprojection_error_for_pose(
-            ray_set=ray_set,
-            object_points_target=object_points,
-            object_to_reference_translation=alpha_translation_reference,
-            object_to_reference_rotation_quaternion=alpha_rotation_quaternion)
-        beta_reprojection_error = self._calculate_reprojection_error_for_pose(
-            ray_set=ray_set,
-            object_points_target=object_points,
-            object_to_reference_translation=beta_translation_reference,
-            object_to_reference_rotation_quaternion=beta_rotation_quaternion)
-        if beta_reprojection_error <= \
-           self._parameters.POSE_SINGLE_CAMERA_REPROJECTION_ERROR_FACTOR_BETA_OVER_ALPHA * alpha_reprojection_error:
-            return beta_translation_reference, beta_rotation_quaternion
-
-        return alpha_translation_reference, alpha_rotation_quaternion
-
-    def set_detector_poses(self, detector_poses_by_label):
-        self._poses_by_detector_label = detector_poses_by_label
-
-    def get_targets(self):
-        return self._targets
-
-    def update(self):
-        print(self._poses_by_detector_label)
-        print(self._targets)
+    def _update(self):
         now_timestamp = datetime.datetime.now()
+        self._now_timestamp = now_timestamp
         poses_need_update: bool = self._clear_old_values(now_timestamp)
         poses_need_update |= len(self._marker_corners_since_update) > 0
         if not poses_need_update:
             return
+
         self._poses_by_target_id.clear()
 
         image_point_sets_by_image_key: dict[ImagePointSetsKey, list[MarkerCorners]] = dict()
@@ -827,18 +452,55 @@ class PoseSolver2:
             image_point_sets_by_image_key[image_point_sets_key].append(marker_corners)
         self._marker_corners_since_update.clear()
 
-
-
         image_point_set_keys_with_reference_visible: list[ImagePointSetsKey] = list()
         for image_point_sets_key, image_point_sets in image_point_sets_by_image_key.items():
             image_point_set_keys_with_reference_visible.append(image_point_sets_key)
 
-        # Code beyond this point is for tracking targets other than the reference.
-        # But since the targets are tracked relative to the reference,
-        # the reference must be visible.
-        # In addition, code beyond this is for tracking targets other than the reference.
-        # Therefore no need to process image points/rays corresponding
-        # to marker id's in the reference target.
+        return image_point_sets_by_image_key, image_point_set_keys_with_reference_visible
+
+    def _estimate_detector_pose_relative_to_reference(self):
+        image_point_sets_by_image_key, image_point_set_keys_with_reference_visible = self._update()
+        for image_point_sets_key, image_point_sets in image_point_sets_by_image_key.items():
+            detector_label = image_point_sets_key.detector_label
+            image_point_set_reference: MarkerCorners | None = None
+            for image_point_set in image_point_sets:
+                if image_point_set.marker_id == self._reference_target.marker_id:
+                    image_point_set_reference = image_point_set
+                    break
+            if image_point_set_reference is None:
+                continue  # Reference not visible
+            intrinsics: IntrinsicParameters = self._intrinsics_by_detector_label[detector_label]
+            half_width: float = self._reference_target.marker_size / 2.0
+            reference_points: numpy.ndarray = numpy.array([
+                [-half_width, half_width, 0.0],
+                [half_width, half_width, 0.0],
+                [half_width, -half_width, 0.0],
+                [-half_width, -half_width, 0.0]],
+                dtype="float32")
+            reference_points = numpy.reshape(reference_points, newshape=(1, 4, 3))
+            image_points: numpy.ndarray = numpy.array([image_point_set_reference.points], dtype="float32")
+            image_points = numpy.reshape(image_points, newshape=(1, 4, 2))
+            reference_found: bool
+            rotation_vector: numpy.ndarray
+            translation_vector: numpy.ndarray
+            reference_found, rotation_vector, translation_vector = cv2.solvePnP(
+                objectPoints=reference_points,
+                imagePoints=image_points,
+                cameraMatrix=numpy.asarray(intrinsics.get_matrix(), dtype="float32"),
+                distCoeffs=numpy.asarray(intrinsics.get_distortion_coefficients(), dtype="float32"))
+            if not reference_found:
+                continue  # Camera does not see reference target
+            rotation_vector = rotation_vector.flatten()
+            translation_vector = translation_vector.flatten()
+            reference_to_camera_matrix = numpy.identity(4, dtype="float32")
+            reference_to_camera_matrix[0:3, 0:3] = Rotation.from_rotvec(rotation_vector).as_matrix()
+            reference_to_camera_matrix[0:3, 3] = translation_vector
+            reference_to_detector_matrix = transformation_image_to_opengl(reference_to_camera_matrix)
+            detector_to_reference_opengl = numpy.linalg.inv(reference_to_detector_matrix)
+            self._poses_by_detector_label[detector_label] = Matrix4x4.from_numpy_array(detector_to_reference_opengl)
+
+    def _estimate_target_pose_relative_to_reference(self):
+        image_point_sets_by_image_key, image_point_set_keys_with_reference_visible = self._update()
         valid_image_point_sets: list[MarkerCorners] = list()
         for image_point_sets_key in image_point_set_keys_with_reference_visible:
             image_point_sets = image_point_sets_by_image_key[image_point_sets_key]
@@ -866,8 +528,8 @@ class PoseSolver2:
         # Create a dictionary that maps marker ID's to a list of *recent* rays
         ray_sets_by_marker_id: dict[int, list[MarkerRaySet]] = dict()
         for marker_key, marker_ray_set in self._marker_rayset_by_marker_key.items():
-            if (now_timestamp - marker_ray_set.image_timestamp).total_seconds() > \
-               self._parameters.POSE_MULTI_CAMERA_LIMIT_RAY_AGE_SECONDS:
+            if (self._now_timestamp - marker_ray_set.image_timestamp).total_seconds() > \
+                    self._parameters.POSE_MULTI_CAMERA_LIMIT_RAY_AGE_SECONDS:
                 continue
             marker_id = marker_key.marker_id
             if marker_id not in ray_sets_by_marker_id:
@@ -881,9 +543,6 @@ class PoseSolver2:
         for marker_id, ray_set_list in ray_sets_by_marker_id.items():
             ray_set_list.sort(key=lambda x: convex_quadrilateral_area(x.image_points), reverse=True)
             ray_sets_by_marker_id[marker_id] = ray_set_list[0:self._parameters.MAXIMUM_RAY_COUNT_FOR_INTERSECTION]
-
-        # {3: [MarkerRaySet(marker_id=3, image_points=[[313.0, 286.0], [274.0, 258.0], [302.0, 221.0], [343.0, 249.0]], image_timestamp=datetime.datetime(2024, 6, 6, 14, 59, 30, 930568), ray_origin_reference=[-50.78833770751953, 32.08375549316406, 138.39178466796875], ray_directions_reference=[[0.329556674938713, -0.4697124603077573, -0.8190009758955661], [0.34131161852527475, -0.4014604041397548, -0.8499034760621155], [0.40819999259530937, -0.40140338445222046, -0.819907364172944], [0.3975979676348893, -0.47204203800334993, -0.7868241019219728]], detector_label='default_camera', detector_to_reference_matrix=Matrix4x4(values=[0.39500340819358826, 0.8184360265731812, -0.41729456186294556, -50.78833770751953, -0.7034105062484741, 0.5616175532341003, 0.435659795999527, 32.08375549316406, 0.5909196138381958, 0.12144222855567932, 0.7975373268127441, 138.39178466796875, 0.0, 0.0, 0.0, 1.0]))],
-        # 1: [MarkerRaySet(marker_id=1, image_points=[[166.0, 242.0], [189.0, 198.0], [234.0, 223.0], [211.0, 265.0]], image_timestamp=datetime.datetime(2024, 6, 6, 14, 59, 30, 930568), ray_origin_reference=[-50.78833770751953, 32.08375549316406, 138.39178466796875], ray_directions_reference=[[0.28664311265966874, -0.2604856968512508, -0.9219451848534387], [0.3584880484562307, -0.24934378228717258, -0.8996188059897532], [0.3593106579864918, -0.32413295335866804, -0.8751192355568318], [0.28893010166132094, -0.3331333170187453, -0.8975196846078185]], detector_label='default_camera', detector_to_reference_matrix=Matrix4x4(values=[0.39500340819358826, 0.8184360265731812, -0.41729456186294556, -50.78833770751953, -0.7034105062484741, 0.5616175532341003, 0.435659795999527, 32.08375549316406, 0.5909196138381958, 0.12144222855567932, 0.7975373268127441, 138.39178466796875, 0.0, 0.0, 0.0, 1.0]))]}
 
         marker_count_by_marker_id: dict[int, int] = dict()
         for marker_id, ray_set_list in ray_sets_by_marker_id.items():
@@ -1088,7 +747,8 @@ class PoseSolver2:
                 target_depth_key = TargetDepthKey(target_id=target_id, detector_label=detector_label)
                 new_depth = float(numpy.average(
                     [target_depth.depth for target_depth in
-                     self._target_depths_by_target_depth_key[target_depth_key]])) + self._parameters.POSE_SINGLE_CAMERA_DEPTH_CORRECTION
+                     self._target_depths_by_target_depth_key[
+                         target_depth_key]])) + self._parameters.POSE_SINGLE_CAMERA_DEPTH_CORRECTION
                 depth_factor = new_depth / old_depth
                 object_to_reference_matrix[0:3, 3] = detector_position_reference + depth_factor * depth_vector_reference
 

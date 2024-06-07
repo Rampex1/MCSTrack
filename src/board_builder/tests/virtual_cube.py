@@ -1,4 +1,4 @@
-from src.board_builder.pose_location import \
+from src.board_builder.structures.pose_location import \
     PoseLocation
 
 from src.common.structures import \
