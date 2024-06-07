@@ -147,6 +147,7 @@ class BoardBuilderPanel(BasePanel):
         self.pose_solver2.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
         self._target_poses = []
         self._detector_poses = []
+        self._targets = []
 
         ### BOARD BUILDER INIT ###
         self.board_builder = BoardBuilder()
@@ -261,7 +262,6 @@ class BoardBuilderPanel(BasePanel):
                 if ids[marker_id][0] != self.REFERENCE_MARKER_ID:
                     if self.pose_solver.try_add_target_marker(ids[marker_id][0], int(self.MARKER_SIZE_MM)):
                         self.board_builder.expand_matrix()
-                    self.pose_solver2.try_add_target_marker(ids[marker_id][0], int(self.MARKER_SIZE_MM))
 
 
             ### ADD CORNERS ###
@@ -285,12 +285,10 @@ class BoardBuilderPanel(BasePanel):
     def solve_pose2(self, ids, corners):
         """ Given visible Ids and their corners, uses pose_solver to return the pose in the reference frame """
 
-        if ids is not None:
-            ### ADD TARGET MARKER ###
-            for marker_id in range(len(ids)):
-                if ids[marker_id][0] != self.REFERENCE_MARKER_ID:
-                    self.pose_solver2.try_add_target_marker(ids[marker_id][0], int(self.MARKER_SIZE_MM))
+        self._targets = self.pose_solver.get_targets()
+        self.pose_solver2.add_target_marker(self._targets)
 
+        if ids is not None:
             ### ADD CORNERS ###
             for i, corner in enumerate(corners):
                 marker_corners = MarkerCorners(

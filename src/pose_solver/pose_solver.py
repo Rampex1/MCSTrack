@@ -267,11 +267,14 @@ class PoseSolver:
         """
 
         try:
-            marker_uuid = self.add_target_marker(marker_id=marker_id, marker_diameter=marker_diameter)
+            self.add_target_marker(marker_id=marker_id, marker_diameter=marker_diameter)
             print(f"Added {marker_id}")
             return True
         except PoseSolverException:
             return False
+
+    def get_targets(self):
+        return self._targets
 
     def get_poses(
         self

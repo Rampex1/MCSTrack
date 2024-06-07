@@ -236,37 +236,8 @@ class PoseSolver2:
     ) -> None:
         self._marker_corners_since_update += detected_corners
 
-    def add_target_marker(
-        self,
-        marker_id: int,
-        marker_diameter: float
-    ) -> str:
-        for target_id, target in self._targets.items():
-            if isinstance(target, TargetMarker) and marker_id == target.marker_id:
-                raise PoseSolverException(message=f"Marker with id {marker_id} is already being tracked.")
-        target: Target = TargetMarker(
-            marker_id=marker_id,
-            marker_size=marker_diameter)
-        target_id: uuid.UUID = uuid.uuid4()
-        self._targets[target_id] = target
-        return str(target_id)
-
-    def try_add_target_marker(
-            self,
-            marker_id: int,
-            marker_diameter: int
-    ) -> bool:
-        """
-        Returns marker id if marker can be added (David)
-        Note: Later on, can be combined with add_target_marker for simplified code
-        """
-
-        try:
-            marker_uuid = self.add_target_marker(marker_id=marker_id, marker_diameter=marker_diameter)
-            print(f"Added {marker_id}")
-            return True
-        except PoseSolverException:
-            return False
+    def add_target_marker(self, targets):
+        self._targets = targets
 
     def get_poses(
         self
