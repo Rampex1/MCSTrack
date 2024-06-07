@@ -169,9 +169,7 @@ class BoardBuilder:
 
         ### FIND THE OCCLUDED MARKERS POSE WITH ALGORITHM ###
 
-        print("relative_pose", self._relative_pose_matrix)
         occluded_markers_dict = self._get_occluded_markers_pose()
-        print("Occluded marker dict", occluded_markers_dict)
         return occluded_markers_dict
 
         # return self._local_relative_pose_matrix

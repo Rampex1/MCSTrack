@@ -12,10 +12,10 @@ import numpy as np
 import datetime
 from typing import Final
 from src.common.structures import IntrinsicParameters
-from src.pose_solver.pose_solver import PoseSolver
 from src.pose_solver.pose_solver2 import PoseSolver2
 from src.pose_solver.structures import MarkerCorners, TargetMarker, Target
-from src.board_builder.board_builder_relative_pose import BoardBuilder
+from src.board_builder import BoardBuilder
+from src.board_builder import BoardBuilder2
 
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,10 @@ class BoardBuilderPanel(BasePanel):
         control_sizer.Add(self._open_camera_button, 0, wx.ALL | wx.EXPAND, 5)
         self._open_camera_button.Bind(wx.EVT_BUTTON, self.on_open_camera_button_click)
 
+        self._set_reference_button = wx.Button(parent=control_panel, label="Set Reference")
+        control_sizer.Add(self._set_reference_button, 0, wx.ALL | wx.EXPAND, 5)
+        self._set_reference_button.Bind(wx.EVT_BUTTON, self.on_set_reference_button_click)
+
         self._collect_data_button = wx.Button(parent=control_panel, label="Collect Data")
         control_sizer.Add(self._collect_data_button, 0, wx.ALL | wx.EXPAND, 5)
         self._collect_data_button.Bind(wx.EVT_BUTTON, self.on_collect_data_button_click)
@@ -108,6 +112,7 @@ class BoardBuilderPanel(BasePanel):
         control_border_box.Add(
             window=control_panel,
             flags=wx.SizerFlags(1).Expand())
+
         control_border_panel.SetSizer(sizer=control_border_box)
         horizontal_split_sizer.Add(
             window=control_border_panel,
@@ -126,8 +131,9 @@ class BoardBuilderPanel(BasePanel):
         self.cap = None
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.update_frame, self.timer)
-        self.collecting_data = False
-        self.building_board = False
+        self._setting_reference = False
+        self._collecting_data = False
+        self._building_board = False
 
         ### CAMERA SETTINGS ###
         self.camera_matrix = np.array([
@@ -138,19 +144,18 @@ class BoardBuilderPanel(BasePanel):
                                     + self.DETECTOR_GREEN_INTRINSICS.tangential_distortion_coefficients)
 
         ### POSE SOLVER INIT ###
-        self.pose_solver = PoseSolver()
-        self.pose_solver.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
-        self.pose_solver.set_reference_target(TargetMarker(
-            marker_id=self.REFERENCE_MARKER_ID,
-            marker_size=self.MARKER_SIZE_MM))
         self.pose_solver2 = PoseSolver2()
         self.pose_solver2.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
         self._target_poses = []
         self._detector_poses = []
-        self._targets = []
 
         ### BOARD BUILDER INIT ###
         self.board_builder = BoardBuilder()
+        self.board_builder2 = BoardBuilder2()
+        self.board_builder2.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
+        self.board_builder2.set_reference_target(TargetMarker(
+            marker_id=self.REFERENCE_MARKER_ID,
+            marker_size=self.MARKER_SIZE_MM))
         self.MARKER_MIDDLE_TO_EDGE_IN_PIXELS = 20
         self.local_corners = np.array([
             [-self.MARKER_MIDDLE_TO_EDGE_IN_PIXELS, self.MARKER_MIDDLE_TO_EDGE_IN_PIXELS, 0, 1],  # Top-left
@@ -186,8 +191,30 @@ class BoardBuilderPanel(BasePanel):
         corners, ids, rejectedImgPoints = aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
         aruco.drawDetectedMarkers(frame, corners, ids)
 
-        if self.collecting_data:
+        if self._setting_reference:
+            if ids is not None:
+                ### ADD CORNERS ###
+                for i, corner in enumerate(corners):
+                    marker_corners = MarkerCorners(
+                        detector_label=self.DETECTOR_GREEN_NAME,
+                        marker_id=int(ids[i][0]),
+                        points=corner[0].tolist(),
+                        timestamp=datetime.datetime.now()
+                    )
+                    self.board_builder2.add_marker_corners([marker_corners])
+
+                ### DETECTOR POSE ###
+                detector_poses_by_label = dict()
+                self.board_builder2.update()
+                self.board_builder2.estimate_detector_pose_relative_to_reference()
+                detector_poses = self.board_builder2.get_poses()
+                for pose in detector_poses:
+                    detector_poses_by_label[pose.target_id] = pose.object_to_reference_matrix
+                self._detector_poses = detector_poses_by_label
+
+        if self._collecting_data:
             self.solve_pose(ids, corners)
+            #print(self._target_poses)
             if self._detector_poses is not None:
                 self.board_builder.add_detector_poses(self._detector_poses)
 
@@ -203,8 +230,8 @@ class BoardBuilderPanel(BasePanel):
                     corners_location = self.calculate_corners_location(pose_matrix, self.local_corners)
                     self.draw_corners_location(corners_location, frame, self.marker_color[color_index])
 
-        elif self.building_board:
-            self.solve_pose2(ids, corners)
+        elif self._building_board:
+            self.solve_pose(ids, corners)
 
             if self._target_poses is not None:
                 self.board_builder.add_target_poses(self._target_poses)
@@ -229,18 +256,28 @@ class BoardBuilderPanel(BasePanel):
             return
         self.timer.Start(1000//30)
 
+    def on_set_reference_button_click(self, event: wx.CommandEvent) -> None:
+        logger.info("Set reference button clicked")
+        self._setting_reference = True
+        self._collecting_data = False
+        self._building_board = False
+
     def on_collect_data_button_click(self, event: wx.CommandEvent) -> None:
         logger.info("Collect Data button clicked")
-        self.collecting_data = True
-        self.building_board = False
+        self._setting_reference = False
+        self._collecting_data = True
+        self._building_board = False
+
 
     def on_build_board_button_click(self, event: wx.CommandEvent) -> None:
-        self.collecting_data = False
-        self.building_board = True
+        self._setting_reference = False
+        self._collecting_data = False
+        self._building_board = True
 
     def on_reset_button_click(self, event: wx.CommandEvent) -> None:
-        self.collecting_data = False
-        self.building_board = False
+        self._setting_reference = False
+        self._collecting_data = False
+        self._building_board = False
         self._detector_poses = []
         self._target_poses = []
         self.board_builder = BoardBuilder()
@@ -255,40 +292,13 @@ class BoardBuilderPanel(BasePanel):
 
     def solve_pose(self, ids, corners):
         """ Given visible Ids and their corners, uses pose_solver to return the pose in the reference frame """
-
         if ids is not None:
             ### ADD TARGET MARKER ###
             for marker_id in range(len(ids)):
                 if ids[marker_id][0] != self.REFERENCE_MARKER_ID:
-                    if self.pose_solver.try_add_target_marker(ids[marker_id][0], int(self.MARKER_SIZE_MM)):
+                    if self.pose_solver2.try_add_target_marker(ids[marker_id][0], int(self.MARKER_SIZE_MM)):
                         self.board_builder.expand_matrix()
 
-
-            ### ADD CORNERS ###
-            for i, corner in enumerate(corners):
-                marker_corners = MarkerCorners(
-                    detector_label=self.DETECTOR_GREEN_NAME,
-                    marker_id=int(ids[i][0]),
-                    points=corner[0].tolist(),
-                    timestamp=datetime.datetime.now()
-                )
-                self.pose_solver.add_marker_corners([marker_corners])
-                self.pose_solver2.add_marker_corners([marker_corners])
-
-            ### SOLVE POSE ###
-            self.pose_solver.update()
-            detector_poses, target_poses = self.pose_solver.get_poses()
-            # {'default_camera': Matrix4x4(values=[-0.026744524016976357, 0.9314369559288025, -0.3629186153411865, -47.215579986572266, -0.4845777153968811, 0.30546122789382935, 0.8196815252304077, 139.50146484375, 0.8743392825126648, 0.19778425991535187, 0.44318416714668274, 192.38699340820312, 0.0, 0.0, 0.0, 1.0])}
-            self._detector_poses = detector_poses
-            self._target_poses = target_poses
-
-    def solve_pose2(self, ids, corners):
-        """ Given visible Ids and their corners, uses pose_solver to return the pose in the reference frame """
-
-        self._targets = self.pose_solver.get_targets()
-        self.pose_solver2.add_target_marker(self._targets)
-
-        if ids is not None:
             ### ADD CORNERS ###
             for i, corner in enumerate(corners):
                 marker_corners = MarkerCorners(
@@ -300,8 +310,11 @@ class BoardBuilderPanel(BasePanel):
                 self.pose_solver2.add_marker_corners([marker_corners])
 
             ### SOLVE POSE ###
+            self.pose_solver2.set_detector_poses(self._detector_poses)
+            self.pose_solver2.update()
             _, target_poses = self.pose_solver2.get_poses()
             self._target_poses = target_poses
+            # print(target_poses)
 
     def calculate_corners_location(self, T_matrix, local_corners):
         """ Given a matrix transformation, find the four corners """

@@ -6,8 +6,7 @@ from .structures import \
     PoseData, \
     Ray, \
     Target, \
-    TargetMarker, \
-    PoseSolverParameters
+    TargetMarker
 from .util import \
     average_quaternion, \
     average_vector, \
@@ -28,8 +27,47 @@ import datetime
 import numpy
 from scipy.spatial.transform import Rotation
 from typing import Callable, Final, Optional, TypeVar
-from pydantic import BaseModel, Field
 import uuid
+
+
+# TODO: These can be made into a parameter struct/file input
+MAXIMUM_RAY_COUNT_FOR_INTERSECTION: Final[int] = 2
+POSE_MULTI_CAMERA_LIMIT_RAY_AGE_SECONDS: Final[float] = 0.1
+POSE_SINGLE_CAMERA_EXTRAPOLATION_MINIMUM_SURFACE_NORMAL_ANGLE_DEGREES: Final[float] = 15.0
+POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_RAY_AGE_SECONDS: Final[float] = 1.0
+POSE_SINGLE_CAMERA_EXTRAPOLATION_MAXIMUM_ORDER: Final[int] = 0
+POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_ANGLE_DEGREES: Final[float] = 15.0
+POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_DISTANCE: Final[float] = 15.0  # millimeters
+POSE_SINGLE_CAMERA_NEAREST_LIMIT_RAY_AGE_SECONDS: Final[float] = 0.8
+POSE_SINGLE_CAMERA_NEAREST_LIMIT_ANGLE_DEGREES: Final[float] = 15.0
+POSE_SINGLE_CAMERA_NEAREST_LIMIT_DISTANCE: Final[float] = 15.0  # millimeters
+POSE_SINGLE_CAMERA_REPROJECTION_ERROR_FACTOR_BETA_OVER_ALPHA: Final[float] = 1.0
+POSE_SINGLE_CAMERA_DEPTH_LIMIT_AGE_SECONDS: Final[float] = 0.4
+# TODO: Is this next one detector-specific?
+POSE_SINGLE_CAMERA_DEPTH_CORRECTION: Final[float] = -7.5  # millimeters, observed tendency to overestimate depth
+POSE_DETECTOR_DENOISE_LIMIT_AGE_SECONDS: Final[float] = 1.0
+INTERSECTION_MAXIMUM_DISTANCE: Final[float] = 10  # millimeters
+ITERATIVE_CLOSEST_POINT_TERMINATION_ITERATION_COUNT: Final[int] = 50
+ITERATIVE_CLOSEST_POINT_TERMINATION_TRANSLATION: Final[float] = 0.005  # millimeters
+ITERATIVE_CLOSEST_POINT_TERMINATION_ROTATION_RADIANS: Final[float] = 0.0005
+ITERATIVE_CLOSEST_POINT_TERMINATION_MEAN_POINT_DISTANCE: Final[float] = 0.1  # millimeters
+ITERATIVE_CLOSEST_POINT_TERMINATION_RMS_POINT_DISTANCE: Final[float] = 0.1  # millimeters
+
+DENOISE_OUTLIER_DISTANCE_MILLIMETERS: Final[float] = 10.0
+DENOISE_OUTLIER_ANGLE_DEGREES: Final[float] = 5.0
+DENOISE_STORAGE_SIZE: Final[int] = 10
+DENOISE_FILTER_SIZE: Final[int] = 7
+DENOISE_REQUIRED_STARTING_STREAK: Final[int] = 3
+
+ARUCO_MARKER_DICTIONARY_ENUM: Final[int] = cv2.aruco.DICT_4X4_100
+ARUCO_POSE_ESTIMATOR_METHOD: Final[int] = cv2.SOLVEPNP_ITERATIVE  # TODO: use this value in solvePnP calls
+# SOLVEPNP_ITERATIVE works okay but is susceptible to optical illusions (flipping)
+# SOLVEPNP_P3P appears to return nan's on rare occasion
+# SOLVEPNP_SQPNP appears to return nan's on rare occasion
+# SOLVEPNP_IPPE_SQUARE does not seem to work very well at all, translation is much smaller than expected
+
+EPSILON: Final[float] = 0.0001
+
 
 KeyType = TypeVar("KeyType")
 ValueType = TypeVar("ValueType")
@@ -213,7 +251,6 @@ class PoseSolver:
         # TODO: A means of adding target markers (?)
 
         self._intrinsics_by_detector_label = dict()
-        self._parameters = PoseSolverParameters()
         self._targets = dict()
         self._reference_target = TargetMarker(
             marker_id=0,
@@ -227,11 +264,11 @@ class PoseSolver:
         self._target_depths_by_target_depth_key = dict()
 
         self._minimum_marker_age_before_removal_seconds = max([
-            self._parameters.POSE_DETECTOR_DENOISE_LIMIT_AGE_SECONDS,
-            self._parameters.POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_RAY_AGE_SECONDS,
-            self._parameters.POSE_SINGLE_CAMERA_NEAREST_LIMIT_RAY_AGE_SECONDS,
-            self._parameters.POSE_SINGLE_CAMERA_DEPTH_LIMIT_AGE_SECONDS,
-            self._parameters.POSE_MULTI_CAMERA_LIMIT_RAY_AGE_SECONDS])
+            POSE_DETECTOR_DENOISE_LIMIT_AGE_SECONDS,
+            POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_RAY_AGE_SECONDS,
+            POSE_SINGLE_CAMERA_NEAREST_LIMIT_RAY_AGE_SECONDS,
+            POSE_SINGLE_CAMERA_DEPTH_LIMIT_AGE_SECONDS,
+            POSE_MULTI_CAMERA_LIMIT_RAY_AGE_SECONDS])
 
     def add_marker_corners(
         self,
@@ -255,26 +292,6 @@ class PoseSolver:
         target_id: uuid.UUID = uuid.uuid4()
         self._targets[target_id] = target
         return str(target_id)
-
-    def try_add_target_marker(
-            self,
-            marker_id: int,
-            marker_diameter: int
-    ) -> bool:
-        """
-        Returns marker id if marker can be added (David)
-        Note: Later on, can be combined with add_target_marker for simplified code
-        """
-
-        try:
-            self.add_target_marker(marker_id=marker_id, marker_diameter=marker_diameter)
-            print(f"Added {marker_id}")
-            return True
-        except PoseSolverException:
-            return False
-
-    def get_targets(self):
-        return self._targets
 
     def get_poses(
         self
@@ -315,9 +332,6 @@ class PoseSolver:
                 self._targets.pop(tracked_target_id)
                 break
         self._reference_target = target
-
-    def get_targets(self):
-        return self._targets
 
     def _calculate_marker_ray_set(
         self,
@@ -415,19 +429,19 @@ class PoseSolver:
             input_dict=self._alpha_poses_by_target_id,
             age_from_value_function=PoseData.age_seconds,
             query_timestamp=query_timestamp,
-            maximum_age_seconds=self._parameters.POSE_SINGLE_CAMERA_NEAREST_LIMIT_RAY_AGE_SECONDS)
+            maximum_age_seconds=POSE_SINGLE_CAMERA_NEAREST_LIMIT_RAY_AGE_SECONDS)
         changed |= modified
         self._target_extrapolation_poses_by_target_id, modified = self._clear_old_values_from_dict_of_lists(
             input_dict=self._target_extrapolation_poses_by_target_id,
             age_from_value_function=PoseData.age_seconds,
             query_timestamp=query_timestamp,
-            maximum_age_seconds=self._parameters.POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_RAY_AGE_SECONDS)
+            maximum_age_seconds=POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_RAY_AGE_SECONDS)
         changed |= modified
         self._target_depths_by_target_depth_key, modified = self._clear_old_values_from_dict_of_lists(
             input_dict=self._target_depths_by_target_depth_key,
             age_from_value_function=TargetDepth.age_seconds,
             query_timestamp=query_timestamp,
-            maximum_age_seconds=self._parameters.POSE_SINGLE_CAMERA_DEPTH_LIMIT_AGE_SECONDS)
+            maximum_age_seconds=POSE_SINGLE_CAMERA_DEPTH_LIMIT_AGE_SECONDS)
         changed |= modified
         return changed
 
@@ -488,21 +502,20 @@ class PoseSolver:
     @staticmethod
     def _denoise_is_pose_pair_outlier(
         pose_a: PoseData,
-        pose_b: PoseData,
-        parameters: PoseSolverParameters
+        pose_b: PoseData
     ) -> bool:
 
         position_a = pose_a.object_to_reference_matrix[0:3, 3]
         position_b = pose_b.object_to_reference_matrix[0:3, 3]
         distance_millimeters = numpy.linalg.norm(position_a - position_b)
-        if distance_millimeters > parameters.DENOISE_OUTLIER_DISTANCE_MILLIMETERS:
+        if distance_millimeters > DENOISE_OUTLIER_DISTANCE_MILLIMETERS:
             return True
 
         orientation_a = pose_a.object_to_reference_matrix[0:3, 0:3]
         orientation_b = pose_b.object_to_reference_matrix[0:3, 0:3]
         rotation_a_to_b = numpy.matmul(orientation_a, numpy.linalg.inv(orientation_b))
         angle_degrees = numpy.linalg.norm(Rotation.from_matrix(rotation_a_to_b).as_rotvec())
-        if angle_degrees > parameters.DENOISE_OUTLIER_DISTANCE_MILLIMETERS:
+        if angle_degrees > DENOISE_OUTLIER_DISTANCE_MILLIMETERS:
             return True
 
         return False
@@ -515,15 +528,15 @@ class PoseSolver:
         raw_poses: list[PoseData]  # In order, oldest to newest
     ) -> PoseData:
         most_recent_pose = raw_poses[-1]
-        max_storage_size: int = self._parameters.DENOISE_STORAGE_SIZE
-        filter_size: int = self._parameters.DENOISE_FILTER_SIZE
+        max_storage_size: int = DENOISE_STORAGE_SIZE
+        filter_size: int = DENOISE_FILTER_SIZE
         if filter_size <= 1 or max_storage_size <= 1:
             return most_recent_pose  # trivial case
 
         # find a consistent range of recent indices
         poses: list[PoseData] = list(raw_poses)
         poses.reverse()  # now they are sorted so that the first element is most recent
-        required_starting_streak: int = self._parameters.DENOISE_REQUIRED_STARTING_STREAK
+        required_starting_streak: int = DENOISE_REQUIRED_STARTING_STREAK
         starting_index: int = -1  # not yet known, we want to find this
         if required_starting_streak <= 1:
             starting_index = 0  # trivial case
@@ -651,14 +664,14 @@ class PoseSolver:
         point_bottom_right = numpy.array(object_points[2])
         point_bottom_left = numpy.array(object_points[3])
         marker_side = numpy.linalg.norm(point_top_right - point_top_left)
-        if marker_side <= PoseSolverParameters.EPSILON:
+        if marker_side <= EPSILON:
             raise RuntimeError("Input marker points must define a square of side length larger than zero.")
         marker_diag = numpy.sqrt(numpy.square(marker_side) * 2)
-        if abs(numpy.linalg.norm(point_bottom_right - point_top_right) - marker_side) > self._parameters.EPSILON or \
-           abs(numpy.linalg.norm(point_bottom_left - point_bottom_right) - marker_side) > self._parameters.EPSILON or \
-           abs(numpy.linalg.norm(point_top_left - point_bottom_left) - marker_side) > self._parameters.EPSILON or \
-           abs(numpy.linalg.norm(point_top_left - point_bottom_right) - marker_diag) > self._parameters.EPSILON or \
-           abs(numpy.linalg.norm(point_top_right - point_bottom_left) - marker_diag) > self._parameters.EPSILON:
+        if abs(numpy.linalg.norm(point_bottom_right - point_top_right) - marker_side) > EPSILON or \
+           abs(numpy.linalg.norm(point_bottom_left - point_bottom_right) - marker_side) > EPSILON or \
+           abs(numpy.linalg.norm(point_top_left - point_bottom_left) - marker_side) > EPSILON or \
+           abs(numpy.linalg.norm(point_top_left - point_bottom_right) - marker_diag) > EPSILON or \
+           abs(numpy.linalg.norm(point_top_right - point_bottom_left) - marker_diag) > EPSILON:
             raise RuntimeError("Input marker points do not form a square.")
 
         # Calculate the rotation that creates the beta version of the pose
@@ -709,7 +722,7 @@ class PoseSolver:
         alpha_pose_quality: Optional[PoseExtrapolationQuality] = None
         beta_pose_quality: Optional[PoseExtrapolationQuality] = None
         if rotation_alpha_to_reference_magnitude_degrees >= \
-           self._parameters.POSE_SINGLE_CAMERA_EXTRAPOLATION_MINIMUM_SURFACE_NORMAL_ANGLE_DEGREES:
+           POSE_SINGLE_CAMERA_EXTRAPOLATION_MINIMUM_SURFACE_NORMAL_ANGLE_DEGREES:
             # Use velocity and angular velocity over recent poses to extrapolate pose,
             # determine which of alpha and beta are closest (within threshold)
             recent_poses: list[PoseData] = list()
@@ -717,7 +730,7 @@ class PoseSolver:
             if target_label in self._target_extrapolation_poses_by_target_id:
                 for pose in self._target_extrapolation_poses_by_target_id[target.target_label]:
                     if (ray_set.image_timestamp - pose.oldest_timestamp()).total_seconds() <= \
-                       self._parameters.POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_RAY_AGE_SECONDS:
+                       POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_RAY_AGE_SECONDS:
                         recent_poses.append(pose)
             if len(recent_poses) >= 4:  # Size of quaternion, minimum for solving linear equation
                 oldest_pose_timestamp = sorted([pose.oldest_timestamp() for pose in recent_poses])[0]
@@ -752,15 +765,15 @@ class PoseSolver:
                     expected_rotation_quaternion=extrapolated_rotation_quaternion,
                     sample_translation=numpy.array(alpha_translation_reference, dtype="float32"),
                     sample_rotation_quaternion=numpy.array(alpha_rotation_quaternion, dtype="float32"),
-                    maximum_relative_translation_magnitude=PoseSolverParameters.POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_DISTANCE,
+                    maximum_relative_translation_magnitude=POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_DISTANCE,
                     maximum_relative_rotation_magnitude_degrees=POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_ANGLE_DEGREES)
                 beta_pose_quality = PoseExtrapolationQuality.quality_of_pose_extrapolation(
                     expected_translation=extrapolated_translation_reference,
                     expected_rotation_quaternion=extrapolated_rotation_quaternion,
                     sample_translation=numpy.array(beta_translation_reference, dtype="float32"),
                     sample_rotation_quaternion=numpy.array(beta_rotation_quaternion, dtype="float32"),
-                    maximum_relative_translation_magnitude=PoseSolverParameters.POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_DISTANCE,
-                    maximum_relative_rotation_magnitude_degrees=PoseSolverParameters.POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_ANGLE_DEGREES)
+                    maximum_relative_translation_magnitude=POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_DISTANCE,
+                    maximum_relative_rotation_magnitude_degrees=POSE_SINGLE_CAMERA_EXTRAPOLATION_LIMIT_ANGLE_DEGREES)
         else:
             if isinstance(target, TargetMarker):
                 target_label = str(target.marker_id)
@@ -774,7 +787,7 @@ class PoseSolver:
                 alpha_rotations_quaternion: list[list[float]] = list()
                 for alpha_pose in self._alpha_poses_by_target_id[target.target_label]:
                     if (ray_set.image_timestamp - alpha_pose.oldest_timestamp()).total_seconds() <= \
-                       self._parameters.POSE_SINGLE_CAMERA_NEAREST_LIMIT_RAY_AGE_SECONDS:
+                       POSE_SINGLE_CAMERA_NEAREST_LIMIT_RAY_AGE_SECONDS:
                         alpha_translations_reference.append(list(
                             alpha_pose.object_to_reference_matrix[0:3, 3].tolist()))
                         # noinspection PyTypeChecker
@@ -797,8 +810,8 @@ class PoseSolver:
                     expected_rotation_quaternion=numpy.array(average_alpha_rotation_quaternion, dtype="float32"),
                     sample_translation=numpy.array(beta_translation_reference, dtype="float32"),
                     sample_rotation_quaternion=numpy.array(beta_rotation_quaternion, dtype="float32"),
-                    maximum_relative_translation_magnitude=self._parameters.POSE_SINGLE_CAMERA_NEAREST_LIMIT_DISTANCE,
-                    maximum_relative_rotation_magnitude_degrees=self._parameters.POSE_SINGLE_CAMERA_NEAREST_LIMIT_ANGLE_DEGREES)
+                    maximum_relative_translation_magnitude=POSE_SINGLE_CAMERA_NEAREST_LIMIT_DISTANCE,
+                    maximum_relative_rotation_magnitude_degrees=POSE_SINGLE_CAMERA_NEAREST_LIMIT_ANGLE_DEGREES)
 
         if alpha_pose_quality is not None and beta_pose_quality is not None:
             if alpha_pose_quality.plausible and beta_pose_quality.plausible:
@@ -822,7 +835,7 @@ class PoseSolver:
             object_to_reference_translation=beta_translation_reference,
             object_to_reference_rotation_quaternion=beta_rotation_quaternion)
         if beta_reprojection_error <= \
-           self._parameters.POSE_SINGLE_CAMERA_REPROJECTION_ERROR_FACTOR_BETA_OVER_ALPHA * alpha_reprojection_error:
+           POSE_SINGLE_CAMERA_REPROJECTION_ERROR_FACTOR_BETA_OVER_ALPHA * alpha_reprojection_error:
             return beta_translation_reference, beta_rotation_quaternion
 
         return alpha_translation_reference, alpha_rotation_quaternion
@@ -931,13 +944,12 @@ class PoseSolver:
         ray_sets_by_marker_id: dict[int, list[MarkerRaySet]] = dict()
         for marker_key, marker_ray_set in self._marker_rayset_by_marker_key.items():
             if (now_timestamp - marker_ray_set.image_timestamp).total_seconds() > \
-               self._parameters.POSE_MULTI_CAMERA_LIMIT_RAY_AGE_SECONDS:
+               POSE_MULTI_CAMERA_LIMIT_RAY_AGE_SECONDS:
                 continue
             marker_id = marker_key.marker_id
             if marker_id not in ray_sets_by_marker_id:
                 ray_sets_by_marker_id[marker_id] = list()
             ray_sets_by_marker_id[marker_id].append(marker_ray_set)
-
 
         # Sort rays by the size of quadrilateral.
         # Larger marker size in image suggests more precision.
@@ -945,7 +957,7 @@ class PoseSolver:
         # there may be little point in processing additional (lower precision) ray sets.
         for marker_id, ray_set_list in ray_sets_by_marker_id.items():
             ray_set_list.sort(key=lambda x: convex_quadrilateral_area(x.image_points), reverse=True)
-            ray_sets_by_marker_id[marker_id] = ray_set_list[0:self._parameters.MAXIMUM_RAY_COUNT_FOR_INTERSECTION]
+            ray_sets_by_marker_id[marker_id] = ray_set_list[0:MAXIMUM_RAY_COUNT_FOR_INTERSECTION]
 
         marker_count_by_marker_id: dict[int, int] = dict()
         for marker_id, ray_set_list in ray_sets_by_marker_id.items():
@@ -977,7 +989,7 @@ class PoseSolver:
                         direction=ray_set.ray_directions_reference[corner_index]))
                 intersection_result = closest_intersection_between_n_lines(
                     rays=rays,
-                    maximum_distance=self._parameters.INTERSECTION_MAXIMUM_DISTANCE)
+                    maximum_distance=INTERSECTION_MAXIMUM_DISTANCE)
                 if intersection_result.centroids.shape[0] == 0:
                     intersections_appear_valid = False
                     break
@@ -1058,11 +1070,11 @@ class PoseSolver:
                 object_ray_points: list[list[float]] = list()
                 reference_rays: list[Ray] = list()
                 iterative_closest_point_parameters = IterativeClosestPointParameters(
-                    termination_iteration_count=self._parameters.ITERATIVE_CLOSEST_POINT_TERMINATION_ITERATION_COUNT,
-                    termination_delta_translation=self._parameters.ITERATIVE_CLOSEST_POINT_TERMINATION_TRANSLATION,
-                    termination_delta_rotation_radians=self._parameters.ITERATIVE_CLOSEST_POINT_TERMINATION_ROTATION_RADIANS,
-                    termination_mean_point_distance=self._parameters.ITERATIVE_CLOSEST_POINT_TERMINATION_MEAN_POINT_DISTANCE,
-                    termination_rms_point_distance=self._parameters.ITERATIVE_CLOSEST_POINT_TERMINATION_RMS_POINT_DISTANCE)
+                    termination_iteration_count=ITERATIVE_CLOSEST_POINT_TERMINATION_ITERATION_COUNT,
+                    termination_delta_translation=ITERATIVE_CLOSEST_POINT_TERMINATION_TRANSLATION,
+                    termination_delta_rotation_radians=ITERATIVE_CLOSEST_POINT_TERMINATION_ROTATION_RADIANS,
+                    termination_mean_point_distance=ITERATIVE_CLOSEST_POINT_TERMINATION_MEAN_POINT_DISTANCE,
+                    termination_rms_point_distance=ITERATIVE_CLOSEST_POINT_TERMINATION_RMS_POINT_DISTANCE)
 
                 if len(marker_ids_with_intersections) >= 1:
                     reference_points_for_intersections: list[list[float]] = list()
@@ -1151,7 +1163,7 @@ class PoseSolver:
                 target_depth_key = TargetDepthKey(target_id=target_id, detector_label=detector_label)
                 new_depth = float(numpy.average(
                     [target_depth.depth for target_depth in
-                     self._target_depths_by_target_depth_key[target_depth_key]])) + self._parameters.POSE_SINGLE_CAMERA_DEPTH_CORRECTION
+                     self._target_depths_by_target_depth_key[target_depth_key]])) + POSE_SINGLE_CAMERA_DEPTH_CORRECTION
                 depth_factor = new_depth / old_depth
                 object_to_reference_matrix[0:3, 3] = detector_position_reference + depth_factor * depth_vector_reference
 
