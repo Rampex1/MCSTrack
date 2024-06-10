@@ -1,5 +1,8 @@
 import numpy as np
+import datetime
 from src.board_builder.structures.pose_location import PoseLocation
+from src.pose_solver.structures import MarkerCorners
+#from src.board_builder import BoardBuilderPoseSolver
 
 class BoardBuilder:
 
@@ -11,6 +14,7 @@ class BoardBuilder:
         self._visible_markers = []
         self._index_counter = 0
         self._index_to_marker_uuid = {}
+        #self.pose_solver = BoardBuilderPoseSolver()
 
 
         ### MATRIX INIT ###
@@ -56,7 +60,6 @@ class BoardBuilder:
         pose_index = -1
         other_pose_index = -1
 
-        #print(self._index_to_marker_uuid)
         for index in self._index_to_marker_uuid:
             if self._index_to_marker_uuid[index] == pose_uuid:
                 pose_index = index
@@ -95,6 +98,48 @@ class BoardBuilder:
 
         return corners_dict
 
+    def solve_pose(
+            self,
+            ids,
+            corners,
+            reference_marker_id,
+            detector_green_name,
+            marker_size_mm,
+            pose_solver,
+            board_builder
+    ):
+        markers_visible = False
+        target_poses = []
+        if ids is not None:
+            for marker_id in range(len(ids)):
+                if ids[marker_id][0] != reference_marker_id:
+                    if pose_solver.try_add_target_marker(ids[marker_id][0], int(marker_size_mm)):
+                        board_builder.expand_matrix()
+
+            for i, corner in enumerate(corners):
+                if int(ids[i][0]) != reference_marker_id:
+                    marker_corners = MarkerCorners(
+                        detector_label=detector_green_name,
+                        marker_id=int(ids[i][0]),
+                        points=corner[0].tolist(),
+                        timestamp=datetime.datetime.now()
+                    )
+                    pose_solver.add_marker_corners([marker_corners])
+                    markers_visible = True
+
+            if markers_visible:
+                target_poses = pose_solver.get_target_poses()
+                self._target_poses = target_poses
+                visible_markers = []
+                for pose in target_poses:
+                    visible_markers.append(pose.target_id)
+                    if pose.target_id not in list(self._index_to_marker_uuid.values()):
+                        self._index_to_marker_uuid[self._index_counter] = pose.target_id
+                        self._index_counter += 1
+
+                self._visible_markers = visible_markers
+        return target_poses, pose_solver
+
     ### PUBLIC METHOD ###
     def expand_matrix(self):
         """ Adds one row and one column to the matrix and initializes them to None """
@@ -104,22 +149,36 @@ class BoardBuilder:
             for j in range(size - 1):
                 new_matrix[i][j] = self._relative_pose_matrix[i][j]
         self._relative_pose_matrix = new_matrix
-        #print(self._relative_pose_matrix)
 
-    def add_detector_poses(self, detector_poses):
-        self._detector_poses = detector_poses
+    def set_reference_markers(
+            self,
+            ids,
+            corners,
+            detector_green_name,
+            reference_marker_id,
+            pose_solver
+    ):
+        reference_visible = False
+        if ids is not None:
+            for i, corner in enumerate(corners):
+                if ids[i][0] == reference_marker_id:
+                    marker_corners = MarkerCorners(
+                        detector_label=detector_green_name,
+                        marker_id=int(ids[i][0]),
+                        points=corner[0].tolist(),
+                        timestamp=datetime.datetime.now()
+                    )
+                    pose_solver.add_marker_corners([marker_corners])
+                    reference_visible = True
 
-    def add_target_poses(self, target_poses):
-        visible_markers = []
-        self._target_poses = target_poses
-        for pose in target_poses:
-            visible_markers.append(pose.target_id)
-            if pose.target_id not in list(self._index_to_marker_uuid.values()):
-                self._index_to_marker_uuid[self._index_counter] = pose.target_id
-                self._index_counter += 1
-
-        self._visible_markers = visible_markers
-
+        detector_poses_by_label = {}
+        if reference_visible:
+            detector_poses = pose_solver.get_detector_poses()
+            for pose in detector_poses:
+                detector_poses_by_label[pose.target_id] = pose.object_to_reference_matrix
+        self._detector_poses = detector_poses_by_label
+        pose_solver.set_detector_poses(detector_poses_by_label)
+        return pose_solver
 
     def collect_data(self):
         """ Collects data of relative position and is entered in matrix"""

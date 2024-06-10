@@ -144,7 +144,6 @@ class BoardBuilderPanel(BasePanel):
 
         ### POSE SOLVER INIT ###
         self._target_poses = []
-        self._detector_poses = []
 
         ### BOARD BUILDER INIT ###
         self.board_builder = BoardBuilder()
@@ -188,37 +187,21 @@ class BoardBuilderPanel(BasePanel):
         corners, ids, rejectedImgPoints = aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
         aruco.drawDetectedMarkers(frame, corners, ids)
 
-        if self._setting_reference:
-            reference_visible = False
-            if ids is not None:
-                ### ADD CORNERS ###
-                for i, corner in enumerate(corners):
-                    if ids[i][0] == self.REFERENCE_MARKER_ID:
-                        marker_corners = MarkerCorners(
-                            detector_label=self.DETECTOR_GREEN_NAME,
-                            marker_id=int(ids[i][0]),
-                            points=corner[0].tolist(),
-                            timestamp=datetime.datetime.now()
-                        )
-                        self.pose_solver.add_marker_corners([marker_corners])
-                        reference_visible = True
+        # TODO: Other buttons are available only once a previous button is clicked
 
-                ### DETECTOR POSE ###
-                if reference_visible:
-                    detector_poses_by_label = dict()
-                    detector_poses = self.pose_solver.get_detector_poses()
-                    for pose in detector_poses:
-                        detector_poses_by_label[pose.target_id] = pose.object_to_reference_matrix
-                    self._detector_poses = detector_poses_by_label
-                    self.pose_solver.set_detector_poses(self._detector_poses)
+        if self._setting_reference:
+            # TODO: Average the detector poses
+            # TODO: Even if detector is gone, it still has its average data
+            detector_poses_by_label = self.board_builder.set_reference_markers(ids, corners, self.DETECTOR_GREEN_NAME,
+                                                                               self.REFERENCE_MARKER_ID, self.pose_solver)
+            self.pose_solver = detector_poses_by_label
 
         if self._collecting_data:
-            self.solve_pose(ids, corners)
-            if self._detector_poses is not None:
-                self.board_builder.add_detector_poses(self._detector_poses)
-
+            target_poses = self.board_builder.solve_pose(ids, corners, self.REFERENCE_MARKER_ID, self.DETECTOR_GREEN_NAME,
+                                          self.MARKER_SIZE_MM, self.pose_solver, self.board_builder)
+            self.pose_solver = target_poses[1]
+            self._target_poses = target_poses[0]
             if self._target_poses is not None:
-                self.board_builder.add_target_poses(self._target_poses)
                 self.board_builder.collect_data()
 
                 ### DRAW MARKERS ###
@@ -230,10 +213,12 @@ class BoardBuilderPanel(BasePanel):
                     self.draw_corners_location(corners_location, frame, self.marker_color[color_index])
 
         elif self._building_board:
-            self.solve_pose(ids, corners)
-
+            target_poses = self.board_builder.solve_pose(ids, corners, self.REFERENCE_MARKER_ID,
+                                                         self.DETECTOR_GREEN_NAME,
+                                                         self.MARKER_SIZE_MM, self.pose_solver, self.board_builder)
+            self.pose_solver = target_poses[1]
+            self._target_poses = target_poses[0]
             if self._target_poses is not None:
-                self.board_builder.add_target_poses(self._target_poses)
                 corners_dict = self.board_builder.build_board()
 
 
@@ -252,7 +237,7 @@ class BoardBuilderPanel(BasePanel):
     def on_open_camera_button_click(self, event: wx.CommandEvent) -> None:
         # Logic to open the camera goes here
         logger.info("Open Camera button clicked")
-        self.cap = cv2.VideoCapture(0)
+        self.cap = cv2.VideoCapture(1)
         if not self.cap.isOpened():
             wx.MessageBox("Cannot open camera", "Error", wx.OK | wx.ICON_ERROR)
             return
@@ -280,7 +265,6 @@ class BoardBuilderPanel(BasePanel):
         self._setting_reference = False
         self._collecting_data = False
         self._building_board = False
-        self._detector_poses = []
         self._target_poses = []
         self.board_builder = BoardBuilder()
 
