@@ -6,19 +6,41 @@ import wx.grid
 from .base_panel import BasePanel
 from .feedback import ImagePanel
 from cv2 import aruco
+from src.calibrator.api import \
+    ListCalibrationDetectorResolutionsRequest
+from src.detector.api import \
+    GetCapturePropertiesRequest
+from src.board_builder.api import \
+    SetReferenceMarkerRequest
 from .parameters import \
     ParameterSelector, \
     ParameterSpinboxFloat, \
     ParameterSpinboxInteger
 from src.board_builder import BoardBuilder
-from src.common import StatusMessageSource, MCastRequestSeries
 from src.common.structures import IntrinsicParameters
 from src.connector import Connector
-from typing import Final
-
-from ...pose_solver.api import SetReferenceMarkerRequest
+import logging
+from typing import Final, Optional
+import uuid
+import wx
+import wx.grid
+from src.common import \
+    ErrorResponse, \
+    EmptyResponse, \
+    MCastRequestSeries, \
+    MCastResponse, \
+    MCastResponseSeries, \
+    StatusMessageSource
 
 logger = logging.getLogger(__name__)
+
+ACTIVE_PHASE_IDLE: Final[int] = 0
+ACTIVE_PHASE_STARTING_CAPTURE: Final[int] = 1
+ACTIVE_PHASE_STARTING_GET_RESOLUTIONS: Final[int] = 2
+ACTIVE_PHASE_STARTING_LIST_INTRINSICS: Final[int] = 3  # This and next phase to be combined with modified API
+ACTIVE_PHASE_STARTING_GET_INTRINSICS: Final[int] = 4
+ACTIVE_PHASE_STARTING_FINAL: Final[int] = 5
+ACTIVE_PHASE_STOPPING: Final[int] = 6
 
 
 class BoardBuilderPanel(BasePanel):
@@ -30,15 +52,12 @@ class BoardBuilderPanel(BasePanel):
     _reference_target_submit_button: wx.Button
 
     _open_camera_button: wx.Button
-    _set_reference_button: wx.Button
+    _locate_reference_button: wx.Button
     _collect_data_button: wx.Button
     _build_board_button: wx.Button
     _reset_button: wx.Button
     _close_camera_button: wx.Button
 
-    # TODO: Select reference marker
-    # TODO: Select Marker diameter
-    # TODO: Set detector intrinsics
     REFERENCE_MARKER_ID: Final[int] = 0
     MARKER_SIZE_MM: Final[float] = 10.0
     DETECTOR_GREEN_NAME: Final[str] = "default_camera"
@@ -127,9 +146,9 @@ class BoardBuilderPanel(BasePanel):
         control_sizer.Add(self._open_camera_button, 0, wx.ALL | wx.EXPAND, 5)
         self._open_camera_button.Bind(wx.EVT_BUTTON, self.on_open_camera_button_click)
 
-        self._set_reference_button = wx.Button(parent=control_panel, label="Set Reference")
-        control_sizer.Add(self._set_reference_button, 0, wx.ALL | wx.EXPAND, 5)
-        self._set_reference_button.Bind(wx.EVT_BUTTON, self.on_set_reference_button_click)
+        self._locate_reference_button = wx.Button(parent=control_panel, label="Locate Reference")
+        control_sizer.Add(self._locate_reference_button, 0, wx.ALL | wx.EXPAND, 5)
+        self._locate_reference_button.Bind(wx.EVT_BUTTON, self.on_locate_reference_button_click)
 
         self._collect_data_button = wx.Button(parent=control_panel, label="Collect Data")
         control_sizer.Add(self._collect_data_button, 0, wx.ALL | wx.EXPAND, 5)
@@ -202,6 +221,26 @@ class BoardBuilderPanel(BasePanel):
     ### UPDATE ###
     def update_loop(self) -> None:
         super().update_loop()
+        self._is_updating = True
+
+        ui_needs_update: bool = False
+
+        if len(self._active_request_ids) > 0:
+            completed_request_ids: list[uuid.UUID] = list()
+            for request_id in self._active_request_ids:
+                _, remaining_request_id = self.update_request(request_id=request_id)
+                if remaining_request_id is None:
+                    ui_needs_update = True
+                    completed_request_ids.append(request_id)
+            for request_id in completed_request_ids:
+                self._active_request_ids.remove(request_id)
+            if len(self._active_request_ids) == 0:
+                self.on_active_request_ids_processed()
+
+        if ui_needs_update:
+            self._update_controls()
+
+        self._is_updating = False
 
     def update_frame(self, event):
         if self.cap is None or not self.cap.isOpened():
@@ -220,18 +259,16 @@ class BoardBuilderPanel(BasePanel):
         aruco.drawDetectedMarkers(frame, corners, ids)
 
         if self._setting_reference:
-            self.board_builder.set_reference_markers(ids, corners)
+            self.board_builder.locate_reference_markers(ids, corners)
 
         elif self._collecting_data:
             if ids is not None:
                 corners_dict = self.board_builder.collect_data(ids, corners)
-                # TODO: Integrate in OpenGl
                 self.draw_all_corners(corners_dict, frame)
 
         elif self._building_board:
             if ids is not None:
                 corners_dict = self.board_builder.build_board(ids, corners)
-                # TODO: Integrate in OpenGl
                 self.draw_all_corners(corners_dict, frame)
 
         height, width = frame.shape[:2]
@@ -240,11 +277,55 @@ class BoardBuilderPanel(BasePanel):
         self._image_panel.SetBitmap(bitmap)
         self.Refresh()
 
+
+    def handle_response_series(
+        self,
+        response_series: MCastResponseSeries,
+        task_description: Optional[str] = None,
+        expected_response_count: Optional[int] = None
+    ) -> bool:
+        success: bool = super().handle_response_series(
+            response_series=response_series,
+            task_description=task_description,
+            expected_response_count=expected_response_count)
+        if not success:
+            return False
+
+        success: bool = True
+        response: MCastResponse
+        for response in response_series.series:
+            if isinstance(response, ErrorResponse):
+                self.handle_error_response(response=response)
+                success = False
+            elif not isinstance(response, EmptyResponse):
+                self.handle_unknown_response(response=response)
+                success = False
+        return success
+
+    def on_active_request_ids_processed(self) -> None:
+        if self._current_phase == ACTIVE_PHASE_STARTING_CAPTURE:
+            self.status_message_source.enqueue_status_message(
+                severity="debug",
+                message="ACTIVE_PHASE_STARTING_CAPTURE complete")
+            calibrator_labels: list[str] = self._connector.get_connected_calibrator_labels()
+            request_series: MCastRequestSeries = MCastRequestSeries(
+                series=[ListCalibrationDetectorResolutionsRequest()])
+            self._active_request_ids.append(self._connector.request_series_push(
+                connection_label=calibrator_labels[0],
+                request_series=request_series))
+            detector_labels: list[str] = self._connector.get_connected_detector_labels()
+            for detector_label in detector_labels:
+                request_series: MCastRequestSeries = MCastRequestSeries(
+                    series=[GetCapturePropertiesRequest()])
+                self._active_request_ids.append(self._connector.request_series_push(
+                    connection_label=detector_label,
+                    request_series=request_series))
+            self._current_phase = ACTIVE_PHASE_STARTING_GET_RESOLUTIONS
+
     def on_pose_solver_select(self, _event: wx.CommandEvent) -> None:
         self._update_controls()
 
     def on_reference_target_submit_pressed(self, _event: wx.CommandEvent) -> None:
-        # TODO: Implement request series
         request_series: MCastRequestSeries = MCastRequestSeries(series=[
             (SetReferenceMarkerRequest(
                 marker_id=self._reference_marker_id_spinbox.spinbox.GetValue(),
@@ -265,8 +346,6 @@ class BoardBuilderPanel(BasePanel):
         self._reference_marker_id_spinbox.Enable(True)
         self._reference_target_submit_button.Enable(True)
 
-
-
     ### MAIN BUTTONS ###
     def on_open_camera_button_click(self, event: wx.CommandEvent) -> None:
         # Logic to open the camera goes here
@@ -275,9 +354,9 @@ class BoardBuilderPanel(BasePanel):
         if not self.cap.isOpened():
             wx.MessageBox("Cannot open camera", "Error", wx.OK | wx.ICON_ERROR)
             return
-        self.timer.Start(1000//30)
+        self.timer.Start(1000 // 30)
 
-    def on_set_reference_button_click(self, event: wx.CommandEvent) -> None:
+    def on_locate_reference_button_click(self, event: wx.CommandEvent) -> None:
         logger.info("Set reference button clicked")
         self._collect_data_button.Enable(True)
         self._setting_reference = True
@@ -324,7 +403,7 @@ class BoardBuilderPanel(BasePanel):
             marker_color = self.marker_color[color_index]
             for corner in corners_location:
                 x, y, z = corner
-                cv2.circle(frame, (int(x) + 200, - int(y) + 200), 4, marker_color, -1)
+                cv2.circle(frame, (int(x) + 200, -int(y) + 200), 4, marker_color, -1)
 
 
 class ImagePanel(wx.Panel):
@@ -341,3 +420,4 @@ class ImagePanel(wx.Panel):
         dc = wx.PaintDC(self)
         if self.bitmap:
             dc.DrawBitmap(self.bitmap, 0, 0)
+

@@ -7,12 +7,10 @@ from src.board_builder.board_builder_api import \
     BoardBuilderAPI, \
     BoardBuilderConfiguration
 from src.board_builder.api import \
-    AddMarkerCornersRequest, \
-    AddTargetMarkerRequest, \
-    AddTargetMarkerResponse, \
-    GetDetectorPosesResponse, \
-    GetTargetPosesResponse, \
-    SetIntrinsicParametersRequest
+    SetIntrinsicParametersRequest, \
+    LocateReferenceMarkersRequest, \
+    CollectDataRequest, \
+    BuildBoardRequest
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.websockets import WebSocket
@@ -48,22 +46,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"])
 
-    # TODO: post and get related to board builder logic
-    @board_builder_app.post("/add_marker_corners")
-    async def add_marker_corners(
-        request: AddMarkerCornersRequest
-    ) -> EmptyResponse | ErrorResponse:
-        return board_builder_api.add_marker_corners(
-            request=request)
-
-    @board_builder_app.get("/get_detector_poses")
-    async def get_detector_poses() -> GetDetectorPosesResponse | ErrorResponse:
-        return board_builder_api.get_poses()
-
-    @board_builder_app.get("/get_target_poses")
-    async def get_target_poses() -> GetTargetPosesResponse | ErrorResponse:
-        return board_builder_api.get_poses()
-
     @board_builder_app.post("/set_intrinsic_parameters")
     async def set_intrinsic_parameters(
         request: SetIntrinsicParametersRequest
@@ -78,6 +60,27 @@ def create_app() -> FastAPI:
     @board_builder_app.head("/stop_capture")
     async def stop_capture() -> None:
         board_builder_api.stop_board_builder()
+
+    @board_builder_app.post("/locate_reference_markers")
+    async def locate_reference_markers(
+        request: LocateReferenceMarkersRequest
+    ) -> EmptyResponse | ErrorResponse:
+        return board_builder_api.locate_reference_markers(
+            request=request)
+
+    @board_builder_app.post("/collect_data")
+    async def collect_data(
+        request: CollectDataRequest
+    ) -> dict | ErrorResponse:
+        return board_builder_api.collect_data(
+            request=request)
+
+    @board_builder_app.post("/build_board")
+    async def build_board(
+        request: BuildBoardRequest
+    ) -> dict | ErrorResponse:
+        return board_builder_api.build_board(
+            request=request)
 
     @board_builder_app.websocket("/websocket")
     async def websocket_handler(websocket: WebSocket) -> None:

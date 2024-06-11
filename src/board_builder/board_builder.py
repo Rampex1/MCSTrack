@@ -121,7 +121,7 @@ class BoardBuilder:
 
     ### PUBLIC METHOD ###
     # TODO: Single marker --> Board
-    def set_reference_markers(self, ids, corners):
+    def locate_reference_markers(self, ids, corners):
         reference_visible = False
 
         if ids is not None:

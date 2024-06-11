@@ -1,11 +1,7 @@
 from .api import \
-    AddMarkerCornersRequest, \
-    AddTargetMarkerRequest, \
-    AddTargetMarkerResponse, \
-    GetDetectorPosesRequest, \
-    GetDetectorPosesResponse, \
-    GetTargetPosesRequest, \
-    GetTargetPosesResponse, \
+    LocateReferenceMarkersRequest, \
+    CollectDataRequest, \
+    BuildBoardRequest, \
     SetIntrinsicParametersRequest, \
     SetReferenceMarkerRequest, \
     StartBoardBuilderRequest, \
@@ -14,7 +10,6 @@ from .exceptions import BoardBuilderException
 from .fileio import BoardBuilderConfiguration
 from .board_builder import BoardBuilder
 from .structures import \
-    MarkerCorners, \
     TargetMarker
 from src.common import \
     EmptyResponse, \
@@ -62,59 +57,46 @@ class BoardBuilderAPI(MCastComponent):
     def supported_request_types(self) -> dict[type[MCastRequest], Callable[[dict], MCastResponse]]:
         return_value: dict[type[MCastRequest], Callable[[dict], MCastResponse]] = super().supported_request_types()
         return_value.update({
-            AddMarkerCornersRequest: self.add_marker_corners,
-            AddTargetMarkerRequest: self.add_target_marker,
-            GetDetectorPosesRequest: self.get_detector_poses,
-            GetTargetPosesRequest: self.get_target_poses,
+            LocateReferenceMarkersRequest: self.locate_reference_markers,
+            CollectDataRequest: self.collect_data,
+            BuildBoardRequest: self.build_board,
             SetIntrinsicParametersRequest: self.set_intrinsic_parameters,
             SetReferenceMarkerRequest: self.set_reference_marker,
             StartBoardBuilderRequest: self.start_board_builder,
             StopBoardBuilderRequest: self.stop_board_builder})
         return return_value
 
-    def add_marker_corners(self, **kwargs) -> EmptyResponse:
-        request: AddMarkerCornersRequest = get_kwarg(
+    def locate_reference_markers(self, **kwargs) -> EmptyResponse:
+        request: LocateReferenceMarkersRequest = get_kwarg(
             kwargs=kwargs,
             key="request",
-            arg_type=AddMarkerCornersRequest)
-        detector_timestamp_utc: datetime.datetime = datetime.datetime.fromisoformat(
-            request.detector_timestamp_utc_iso8601)  # TODO: ErrorResponse if formatted incorrectly?
-        detected_corners: list[MarkerCorners] = [
-            MarkerCorners(
-                detector_label=request.detector_label,
-                marker_id=int(detected_marker_snapshot.label),
-                points=[
-                    [detected_marker_snapshot.corner_image_points[i].x_px,
-                     detected_marker_snapshot.corner_image_points[i].y_px]
-                    for i in range(0, 4)],
-                timestamp=detector_timestamp_utc)
-            for detected_marker_snapshot in request.detected_marker_snapshots]
-        self._board_builder.add_marker_corners(detected_corners=detected_corners)
+            arg_type=LocateReferenceMarkersRequest)
+        self._board_builder.locate_reference_markers(
+            ids=request.ids,
+            corners=request.corners)
         return EmptyResponse()
 
-    def add_target_marker(self, **kwargs) -> AddTargetMarkerResponse | ErrorResponse:
-        request: AddTargetMarkerRequest = get_kwarg(
+    def collect_data(self, **kwargs) -> dict:
+        request: CollectDataRequest = get_kwarg(
             kwargs=kwargs,
             key="request",
-            arg_type=AddTargetMarkerRequest)
-        try:
-            target_id: str = self._board_builder.add_target_marker(
-                marker_id=request.marker_id,
-                marker_diameter=request.marker_diameter)
-        except BoardBuilderException as e:
-            return ErrorResponse(
-                message=e.message)
-        return AddTargetMarkerResponse(
-            target_id=target_id)
+            arg_type=CollectDataRequest)
+        corners_dict = self._board_builder.collect_data(
+            ids=request.ids,
+            corners=request.corners)
+        return corners_dict
 
-    def get_poses(self, **_kwargs) -> GetPosesResponse:
-        detector_poses: list[Pose]
-        target_poses: list[Pose]
-        detector_poses, target_poses = self._board_builder.get_poses()
-        return GetPosesResponse(
-            detector_poses=detector_poses,
-            target_poses=target_poses)
+    def build_board(self, **kwargs) -> dict:
+        request: BuildBoardRequest = get_kwarg(
+            kwargs=kwargs,
+            key="request",
+            arg_type=BuildBoardRequest)
+        corners_dict = self._board_builder.build_board(
+            ids=request.ids,
+            corners=request.corners)
+        return corners_dict
 
+    # TODO: Implement this
     def set_intrinsic_parameters(self, **kwargs) -> EmptyResponse | ErrorResponse:
         request: SetIntrinsicParametersRequest = get_kwarg(
             kwargs=kwargs,
@@ -125,6 +107,7 @@ class BoardBuilderAPI(MCastComponent):
             intrinsic_parameters=request.intrinsic_parameters)
         return EmptyResponse()
 
+    # TODO: Implement this
     def set_reference_marker(self, **kwargs) -> EmptyResponse | ErrorResponse:
         request: SetReferenceMarkerRequest = get_kwarg(
             kwargs=kwargs,

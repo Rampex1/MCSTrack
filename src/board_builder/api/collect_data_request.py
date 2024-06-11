@@ -1,12 +1,13 @@
 from src.common import MCastRequest
 from pydantic import Field
+from typing import List
 
 
-class AddTargetMarkerRequest(MCastRequest):
+class CollectDataRequest(MCastRequest):
     @staticmethod
     def parsable_type_identifier() -> str:
-        return "add_target_marker"
+        return "collect_data"
 
     parsable_type: str = Field(default=parsable_type_identifier(), const=True)
-    marker_id: int = Field()
-    marker_diameter: float = Field()
+    ids: List[int] = Field()
+    corners: List[List[List[float]]] = Field()
