@@ -1,39 +1,34 @@
 import cv2
-import logging
-import numpy as np
-import wx
-import wx.grid
-from .base_panel import BasePanel
-from .feedback import ImagePanel
-from cv2 import aruco
-from src.calibrator.api import \
-    ListCalibrationDetectorResolutionsRequest
-from src.detector.api import \
-    GetCapturePropertiesRequest
-from src.board_builder.api import \
-    SetReferenceMarkerRequest
-from .parameters import \
-    ParameterSelector, \
-    ParameterSpinboxFloat, \
-    ParameterSpinboxInteger
-from src.board_builder import BoardBuilder
-from src.common.structures import IntrinsicParameters
-from src.connector import Connector
+import uuid
 import logging
 from typing import Final, Optional
-import uuid
 import wx
 import wx.grid
-from src.common import \
-    ErrorResponse, \
-    EmptyResponse, \
-    MCastRequestSeries, \
-    MCastResponse, \
-    MCastResponseSeries, \
+from cv2 import aruco
+
+from .base_panel import BasePanel
+from .feedback import ImagePanel
+from .parameters import ParameterSelector, ParameterSpinboxFloat, ParameterSpinboxInteger
+
+from src.calibrator.api import ListCalibrationDetectorResolutionsRequest
+from src.detector.api import GetCapturePropertiesRequest
+from src.board_builder.api import SetReferenceMarkerRequest
+from src.board_builder import BoardBuilder
+
+from src.common.structures import IntrinsicParameters
+from src.connector import Connector
+from src.common import (
+    ErrorResponse,
+    EmptyResponse,
+    MCastRequestSeries,
+    MCastResponse,
+    MCastResponseSeries,
     StatusMessageSource
+)
 
 logger = logging.getLogger(__name__)
 
+# TODO: ????
 ACTIVE_PHASE_IDLE: Final[int] = 0
 ACTIVE_PHASE_STARTING_CAPTURE: Final[int] = 1
 ACTIVE_PHASE_STARTING_GET_RESOLUTIONS: Final[int] = 2
@@ -46,7 +41,7 @@ ACTIVE_PHASE_STOPPING: Final[int] = 6
 class BoardBuilderPanel(BasePanel):
     _connector: Connector
 
-    _pose_solver_selector: ParameterSelector
+    _board_builder_selector: ParameterSelector
     _reference_marker_id_spinbox: ParameterSpinboxInteger
     _reference_marker_diameter_spinbox: ParameterSpinboxFloat
     _reference_target_submit_button: wx.Button
@@ -58,6 +53,7 @@ class BoardBuilderPanel(BasePanel):
     _reset_button: wx.Button
     _close_camera_button: wx.Button
 
+    # TODO: This will not be hard coded
     REFERENCE_MARKER_ID: Final[int] = 0
     MARKER_SIZE_MM: Final[float] = 10.0
     DETECTOR_GREEN_NAME: Final[str] = "default_camera"
@@ -86,11 +82,13 @@ class BoardBuilderPanel(BasePanel):
             connector=connector,
             status_message_source=status_message_source,
             name=name)
-        self._connector = connector
 
+        self._connector = connector
         self._active_request_ids = list()
 
+        ### USER INTERFACE FUNCTIONALITIES AND BUTTONS ###
         horizontal_split_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.HORIZONTAL)
+
         control_border_panel: wx.Panel = wx.Panel(parent=self)
         control_border_box: wx.StaticBoxSizer = wx.StaticBoxSizer(
             orient=wx.VERTICAL,
@@ -103,10 +101,10 @@ class BoardBuilderPanel(BasePanel):
         control_panel.ShowScrollbars(
             horz=wx.SHOW_SB_NEVER,
             vert=wx.SHOW_SB_ALWAYS)
+
         control_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.VERTICAL)
 
-        ### BUTTONS ###
-        self._pose_solver_selector = self.add_control_selector(
+        self._board_builder_selector = self.add_control_selector(
             parent=control_panel,
             sizer=control_sizer,
             label="Board Builder",
@@ -142,29 +140,41 @@ class BoardBuilderPanel(BasePanel):
             parent=control_panel,
             sizer=control_sizer)
 
-        self._open_camera_button = wx.Button(parent=control_panel, label="Open Camera")
-        control_sizer.Add(self._open_camera_button, 0, wx.ALL | wx.EXPAND, 5)
-        self._open_camera_button.Bind(wx.EVT_BUTTON, self.on_open_camera_button_click)
+        self._open_camera_button: wx.Button = self.add_control_button(
+            parent=control_panel,
+            sizer=control_sizer,
+            label="Open Camera"
+        )
 
-        self._locate_reference_button = wx.Button(parent=control_panel, label="Locate Reference")
-        control_sizer.Add(self._locate_reference_button, 0, wx.ALL | wx.EXPAND, 5)
-        self._locate_reference_button.Bind(wx.EVT_BUTTON, self.on_locate_reference_button_click)
+        self._locate_reference_button: wx.Button = self.add_control_button(
+            parent=control_panel,
+            sizer=control_sizer,
+            label="Locate Reference"
+        )
 
-        self._collect_data_button = wx.Button(parent=control_panel, label="Collect Data")
-        control_sizer.Add(self._collect_data_button, 0, wx.ALL | wx.EXPAND, 5)
-        self._collect_data_button.Bind(wx.EVT_BUTTON, self.on_collect_data_button_click)
+        self._collect_data_button: wx.Button = self.add_control_button(
+            parent=control_panel,
+            sizer=control_sizer,
+            label="Collect Data"
+        )
 
-        self._build_board_button = wx.Button(parent=control_panel, label="Build Board")
-        control_sizer.Add(self._build_board_button, 0, wx.ALL | wx.EXPAND, 5)
-        self._build_board_button.Bind(wx.EVT_BUTTON, self.on_build_board_button_click)
+        self._build_board_button: wx.Button = self.add_control_button(
+            parent=control_panel,
+            sizer=control_sizer,
+            label="Build Board"
+        )
 
-        self._reset_button = wx.Button(parent=control_panel, label="Reset")
-        control_sizer.Add(self._reset_button, 0, wx.ALL | wx.EXPAND, 5)
-        self._reset_button.Bind(wx.EVT_BUTTON, self.on_reset_button_click)
+        self._reset_button: wx.Button = self.add_control_button(
+            parent=control_panel,
+            sizer=control_sizer,
+            label="Reset"
+        )
 
-        self._close_camera_button = wx.Button(parent=control_panel, label="Close Camera")
-        control_sizer.Add(self._close_camera_button, 0, wx.ALL | wx.EXPAND, 5)
-        self._close_camera_button.Bind(wx.EVT_BUTTON, self.on_close_camera_button_click)
+        self._close_camera_button: wx.Button = self.add_control_button(
+            parent=control_panel,
+            sizer=control_sizer,
+            label="Close Camera"
+        )
 
         control_spacer_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.HORIZONTAL)
         control_sizer.Add(
@@ -189,16 +199,36 @@ class BoardBuilderPanel(BasePanel):
 
         self.SetSizerAndFit(sizer=horizontal_split_sizer)
 
+
         ### EVENT HANDLING ###
-        self._pose_solver_selector.selector.Bind(
+        self._board_builder_selector.selector.Bind(
             event=wx.EVT_CHOICE,
-            handler=self.on_pose_solver_select)
+            handler=self.on_board_builder_select)
 
         self._reference_target_submit_button.Bind(
             event=wx.EVT_BUTTON,
             handler=self.on_reference_target_submit_pressed)
 
+        self._open_camera_button.Bind(
+            event=wx.EVT_BUTTON,
+            handler=self.on_open_camera_button_click)
+        self._locate_reference_button.Bind(
+            event=wx.EVT_BUTTON,
+            handler=self.on_locate_reference_button_click)
+        self._collect_data_button.Bind(
+            event=wx.EVT_BUTTON,
+            handler=self.on_collect_data_button_click)
+        self._build_board_button.Bind(
+            event=wx.EVT_BUTTON,
+            handler=self.on_build_board_button_click)
+        self._reset_button.Bind(
+            event=wx.EVT_BUTTON,
+            handler=self.on_reset_button_click)
+        self._close_camera_button.Bind(
+            event=wx.EVT_BUTTON,
+            handler=self.on_close_camera_button_click)
 
+        # TODO: IM HERE
         ### INIT ###
         self.cap = None
         self.timer = wx.Timer(self)
@@ -322,7 +352,7 @@ class BoardBuilderPanel(BasePanel):
                     request_series=request_series))
             self._current_phase = ACTIVE_PHASE_STARTING_GET_RESOLUTIONS
 
-    def on_pose_solver_select(self, _event: wx.CommandEvent) -> None:
+    def on_board_builder_select(self, _event: wx.CommandEvent) -> None:
         self._update_controls()
 
     def on_reference_target_submit_pressed(self, _event: wx.CommandEvent) -> None:
@@ -330,19 +360,19 @@ class BoardBuilderPanel(BasePanel):
             (SetReferenceMarkerRequest(
                 marker_id=self._reference_marker_id_spinbox.spinbox.GetValue(),
                 marker_diameter=self._reference_marker_diameter_spinbox.spinbox.GetValue()))])
-        selected_pose_solver_label: str = self._pose_solver_selector.selector.GetStringSelection()
+        selected_board_builder_label: str = self._board_builder_selector.selector.GetStringSelection()
         self._active_request_ids.append(self._connector.request_series_push(
-            connection_label=selected_pose_solver_label,
+            connection_label=selected_board_builder_label,
             request_series=request_series))
         self._update_controls()
 
     def _update_controls(self) -> None:
-        self._pose_solver_selector.Enable(False)
+        self._board_builder_selector.Enable(False)
         self._reference_marker_id_spinbox.Enable(False)
         self._reference_target_submit_button.Enable(False)
         if len(self._active_request_ids) > 0:
             return  # We're waiting for something
-        self._pose_solver_selector.Enable(True)
+        self._board_builder_selector.Enable(True)
         self._reference_marker_id_spinbox.Enable(True)
         self._reference_target_submit_button.Enable(True)
 
