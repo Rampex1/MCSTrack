@@ -153,10 +153,10 @@ for marker in target_markers_list:
         estimated_pose_location = PoseLocation()
         for j in range(len(target_markers_list) - 1):
             if relationship_matrix[j][marker_index] and target_markers_list[j] in visible_markers:
-                T_AC = estimate_reference_to_invisible(transformation_matrices[target_markers_list[j]], relationship_matrix[j][marker_index].get_TMatrix())
+                T_AC = estimate_reference_to_invisible(transformation_matrices[target_markers_list[j]], relationship_matrix[j][marker_index].get_matrix())
                 estimated_pose_location.add_matrix(T_AC)
 
-        marker_position = estimated_pose_location.get_TMatrix()
+        marker_position = estimated_pose_location.get_matrix()
         rounded_matrix = np.round(marker_position, decimals=3)
 
         print(f"The position of marker {marker} is {rounded_matrix}")

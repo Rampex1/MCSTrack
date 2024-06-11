@@ -1,3 +1,4 @@
+from src.board_builder.structures.pose_location import PoseLocation
 from src.pose_solver.exceptions import \
     PoseSolverException
 from src.common.structures import \
@@ -160,6 +161,7 @@ class BoardBuilderPoseSolver:
 
     _poses_by_target_id: dict[uuid.UUID, PoseData]
     _poses_by_detector_label: dict[str, Matrix4x4]
+    _poses_average_by_detector_label: dict[str, PoseLocation()]
 
     def __init__(self):
 
@@ -175,6 +177,7 @@ class BoardBuilderPoseSolver:
         self._target_extrapolation_poses_by_target_id = dict()
         self._poses_by_target_id = dict()
         self._poses_by_detector_label = dict()
+        self._poses_average_by_detector_label = dict()
         self._target_depths_by_target_depth_key = dict()
 
         self._minimum_marker_age_before_removal_seconds = max([
@@ -251,7 +254,7 @@ class BoardBuilderPoseSolver:
         self._reference_target = target
 
     def set_detector_poses(self, detector_poses_by_label):
-        self._poses_by_detector_label = detector_poses_by_label
+        self._poses_average_by_detector_label = detector_poses_by_label
 
     def _calculate_marker_ray_set(
         self,
@@ -507,7 +510,7 @@ class BoardBuilderPoseSolver:
             if marker_key in self._marker_rayset_by_marker_key:
                 if self._marker_rayset_by_marker_key[marker_key].image_timestamp > image_timestamp:
                     continue  # A newer timestamp was found in this iteration. Skip the older one.
-            detector_to_reference_matrix: Matrix4x4 = self._poses_by_detector_label[image_point_set.detector_label]
+            detector_to_reference_matrix: Matrix4x4 = Matrix4x4.from_numpy_array(self._poses_average_by_detector_label[image_point_set.detector_label].get_matrix())
             self._marker_rayset_by_marker_key[marker_key] = self._calculate_marker_ray_set(
                 image_point_set=image_point_set,
                 detector_to_reference_matrix=detector_to_reference_matrix)
@@ -624,11 +627,6 @@ class BoardBuilderPoseSolver:
                 position, orientation = self._estimate_target_pose_from_ray_set(
                     target=target,
                     ray_set=ray_set)
-                # TODO: Re-enable when we are ready to do more advanced alpha-beta pose differentiation
-                # position, orientation = self._estimate_target_pose_from_ray_set_and_single_marker_id(
-                #     ray_set=ray_set,
-                #     target_id=target_id,
-                #     target=target)
                 object_to_reference_matrix[0:3, 3] = position
                 object_to_reference_matrix[0:3, 0:3] = Rotation.from_quat(orientation).as_matrix()
 

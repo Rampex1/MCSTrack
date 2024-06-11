@@ -14,7 +14,7 @@ class BoardBuilder:
         self.DETECTOR_GREEN_INTRINSICS = detectors_intrinsics
 
         ### POSE SOLVER INIT ###
-        self._detector_poses = []
+        self._detector_poses = {}
         self._target_poses = []
         self._visible_markers = []
         self._index_to_marker_uuid = {}
@@ -120,8 +120,6 @@ class BoardBuilder:
                 self._visible_markers = visible_markers
 
     ### PUBLIC METHOD ###
-    # TODO: Average the detector poses
-    # TODO: Even if detector is gone, it still has its average data
     # TODO: Single marker --> Board
     def set_reference_markers(self, ids, corners):
         reference_visible = False
@@ -142,9 +140,15 @@ class BoardBuilder:
         if reference_visible:
             detector_poses = self.pose_solver.get_detector_poses()
             for pose in detector_poses:
+                if pose.target_id not in self._detector_poses:
+                    self._detector_poses[pose.target_id] = PoseLocation()
+                self._detector_poses[pose.target_id].add_matrix(np.array(pose.object_to_reference_matrix.values).reshape(4, 4))
+            self.pose_solver.set_detector_poses(self._detector_poses)
+            """
                 detector_poses_by_label[pose.target_id] = pose.object_to_reference_matrix
-        self._detector_poses = detector_poses_by_label
-        self.pose_solver.set_detector_poses(detector_poses_by_label)
+            self._detector_poses = detector_poses_by_label
+            self.pose_solver.set_detector_poses(detector_poses_by_label)
+            """
 
     def collect_data(self, ids, corners):
         """ Collects data of relative position and is entered in matrix. Returns a dictionary of its corners"""
@@ -205,10 +209,10 @@ class BoardBuilder:
                                 in self._visible_markers):
                             T_AB = other_marker_pose.object_to_reference_matrix.values
                             T_AB = np.reshape(T_AB, (4, 4))
-                            T_BC = self._relative_pose_matrix[matrix_index[0]][matrix_index[1]].get_TMatrix()
+                            T_BC = self._relative_pose_matrix[matrix_index[0]][matrix_index[1]].get_matrix()
                             T_AC = self._estimate_reference_to_occluded(T_AB, T_BC)
                             estimated_pose_location.add_matrix(T_AC)
-                    marker_pose_matrix = estimated_pose_location.get_TMatrix()
+                    marker_pose_matrix = estimated_pose_location.get_matrix()
                     invisible_corners_location = self._calculate_corners_location(marker_pose_matrix,
                                                                                   self.local_corners)
                     corners_dict[marker_uuid] = invisible_corners_location
