@@ -11,12 +11,14 @@ from src.common import \
     MCastResponseSeries, \
     mcast_websocket_send_recv
 from src.common.structures import \
+    COMPONENT_ROLE_LABEL_BOARD_BUILDER, \
     COMPONENT_ROLE_LABEL_CALIBRATOR, \
     COMPONENT_ROLE_LABEL_DETECTOR, \
     COMPONENT_ROLE_LABEL_POSE_SOLVER, \
     ComponentConnectionStatic
 from src.connector.structures import \
     BaseComponentConnectionDynamic, \
+    BoardBuilderComponentConnectionDynamic, \
     CalibratorComponentConnectionDynamic, \
     ConnectionTableRow, \
     DetectorComponentConnectionDynamic, \
@@ -111,7 +113,9 @@ class Connector(MCastComponent):
         if label in self._connections:
             raise RuntimeError(f"Connection associated with {label} already exists.")
         connection_dynamic: BaseComponentConnectionDynamic
-        if connection_static.role == COMPONENT_ROLE_LABEL_CALIBRATOR:
+        if connection_static.role == COMPONENT_ROLE_LABEL_BOARD_BUILDER:
+            connection_dynamic = BoardBuilderComponentConnectionDynamic()
+        elif connection_static.role == COMPONENT_ROLE_LABEL_CALIBRATOR:
             connection_dynamic = CalibratorComponentConnectionDynamic()
         elif connection_static.role == COMPONENT_ROLE_LABEL_DETECTOR:
             connection_dynamic = DetectorComponentConnectionDynamic()
@@ -157,6 +161,9 @@ class Connector(MCastComponent):
                 port=int(connection.static.port),
                 status=connection.dynamic.status))
         return return_value
+
+    def get_connected_board_builder_labels(self) -> list[str]:
+        return self.get_connected_role_labels(role=COMPONENT_ROLE_LABEL_CALIBRATOR)
 
     def get_connected_detector_labels(self) -> list[str]:
         return self.get_connected_role_labels(role=COMPONENT_ROLE_LABEL_DETECTOR)

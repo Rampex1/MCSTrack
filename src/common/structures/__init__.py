@@ -3,6 +3,7 @@ from .capture_status import CaptureStatus
 from .component_connection_static import ComponentConnectionStatic
 from .component_role_label import \
     ComponentRoleLabel, \
+    COMPONENT_ROLE_LABEL_BOARD_BUILDER, \
     COMPONENT_ROLE_LABEL_CALIBRATOR, \
     COMPONENT_ROLE_LABEL_DETECTOR, \
     COMPONENT_ROLE_LABEL_POSE_SOLVER
@@ -28,6 +29,7 @@ from .marker_status import MarkerStatus
 from .matrix4x4 import Matrix4x4
 from .pose import Pose
 from .pose_solver_status import PoseSolverStatus
+from .board_builder_status import BoardBuilderStatus
 from .status_message import \
     SeverityLabel, \
     SEVERITY_LABEL_DEBUG, \

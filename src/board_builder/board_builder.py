@@ -1,6 +1,6 @@
 import datetime
 import numpy as np
-from src.board_builder.board_builder_pose_solver import BoardBuilderPoseSolver
+from src.board_builder.utils.board_builder_pose_solver import BoardBuilderPoseSolver
 from src.board_builder.structures.pose_location import PoseLocation
 from src.pose_solver.structures import MarkerCorners, TargetMarker
 
@@ -123,7 +123,6 @@ class BoardBuilder:
     # TODO: Single marker --> Board
     def set_reference_markers(self, ids, corners):
         reference_visible = False
-        detector_poses_by_label = {}
 
         if ids is not None:
             for i, corner in enumerate(corners):
@@ -144,11 +143,7 @@ class BoardBuilder:
                     self._detector_poses[pose.target_id] = PoseLocation()
                 self._detector_poses[pose.target_id].add_matrix(np.array(pose.object_to_reference_matrix.values).reshape(4, 4))
             self.pose_solver.set_detector_poses(self._detector_poses)
-            """
-                detector_poses_by_label[pose.target_id] = pose.object_to_reference_matrix
-            self._detector_poses = detector_poses_by_label
-            self.pose_solver.set_detector_poses(detector_poses_by_label)
-            """
+
 
     def collect_data(self, ids, corners):
         """ Collects data of relative position and is entered in matrix. Returns a dictionary of its corners"""
