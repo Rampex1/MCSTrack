@@ -10,7 +10,6 @@ from src.common import \
     DequeueStatusMessagesResponse, \
     StatusMessageSource
 from src.common.structures import \
-    COMPONENT_ROLE_LABEL_BOARD_BUILDER, \
     COMPONENT_ROLE_LABEL_CALIBRATOR, \
     COMPONENT_ROLE_LABEL_DETECTOR, \
     COMPONENT_ROLE_LABEL_POSE_SOLVER, \
@@ -88,7 +87,6 @@ class ConnectorPanel(BasePanel):
             sizer=control_sizer,
             label="Role",
             selectable_values=[
-                COMPONENT_ROLE_LABEL_BOARD_BUILDER,
                 COMPONENT_ROLE_LABEL_DETECTOR,
                 COMPONENT_ROLE_LABEL_CALIBRATOR,
                 COMPONENT_ROLE_LABEL_POSE_SOLVER])
