@@ -61,7 +61,6 @@ class BoardBuilderAPI(MCastComponent):
             CollectDataRequest: self.collect_data,
             BuildBoardRequest: self.build_board,
             SetIntrinsicParametersRequest: self.set_intrinsic_parameters,
-            SetReferenceMarkerRequest: self.set_reference_marker,
             StartBoardBuilderRequest: self.start_board_builder,
             StopBoardBuilderRequest: self.stop_board_builder})
         return return_value
@@ -105,22 +104,6 @@ class BoardBuilderAPI(MCastComponent):
         self._board_builder.set_intrinsic_parameters(
             detector_label=request.detector_label,
             intrinsic_parameters=request.intrinsic_parameters)
-        return EmptyResponse()
-
-    # TODO: Implement this
-    def set_reference_marker(self, **kwargs) -> EmptyResponse | ErrorResponse:
-        request: SetReferenceMarkerRequest = get_kwarg(
-            kwargs=kwargs,
-            key="request",
-            arg_type=SetReferenceMarkerRequest)
-        try:
-            self._board_builder.set_reference_target(
-                TargetMarker(
-                    marker_id=request.marker_id,
-                    marker_size=request.marker_diameter))
-        except BoardBuilderException as e:
-            return ErrorResponse(
-                message=e.message)
         return EmptyResponse()
 
     def start_board_builder(self, **_kwargs) -> EmptyResponse:

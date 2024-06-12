@@ -2,6 +2,7 @@ import datetime
 import numpy as np
 from src.board_builder.utils.board_builder_pose_solver import BoardBuilderPoseSolver
 from src.board_builder.structures.pose_location import PoseLocation
+from src.common.structures import IntrinsicParameters
 from src.pose_solver.structures import MarkerCorners, TargetMarker
 
 
@@ -121,6 +122,13 @@ class BoardBuilder:
 
     ### PUBLIC METHOD ###
     # TODO: Single marker --> Board
+    def set_intrinsic_parameters(
+        self,
+        detector_label: str,
+        intrinsic_parameters: IntrinsicParameters
+    ) -> None:
+        self.pose_solver.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
+
     def locate_reference_markers(self, ids, corners):
         reference_visible = False
 

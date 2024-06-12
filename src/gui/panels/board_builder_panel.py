@@ -12,7 +12,12 @@ from .parameters import ParameterSelector, ParameterSpinboxFloat, ParameterSpinb
 
 from src.calibrator.api import ListCalibrationDetectorResolutionsRequest
 from src.detector.api import GetCapturePropertiesRequest
-from src.board_builder.api import SetReferenceMarkerRequest
+from src.board_builder.api import BuildBoardRequest, \
+    CollectDataRequest, \
+    LocateReferenceMarkersRequest, \
+    SetIntrinsicParametersRequest, \
+    StartBoardBuilderRequest, \
+    StopBoardBuilderRequest
 from src.board_builder import BoardBuilder
 
 from src.common.structures import IntrinsicParameters
@@ -103,32 +108,6 @@ class BoardBuilderPanel(BasePanel):
 
         control_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.VERTICAL)
 
-        self._reference_marker_id_spinbox = self.add_control_spinbox_integer(
-            parent=control_panel,
-            sizer=control_sizer,
-            label="Reference Marker ID",
-            minimum_value=0,
-            maximum_value=99,
-            initial_value=0)
-
-        self._reference_marker_diameter_spinbox: ParameterSpinboxFloat = self.add_control_spinbox_float(
-            parent=control_panel,
-            sizer=control_sizer,
-            label="Marker diameter (mm)",
-            minimum_value=1.0,
-            maximum_value=1000.0,
-            initial_value=10.0,
-            step_value=0.5)
-
-        self._reference_target_submit_button: wx.Button = self.add_control_button(
-            parent=control_panel,
-            sizer=control_sizer,
-            label="Set Reference Marker")
-
-        self.add_horizontal_line_to_spacer(
-            parent=control_panel,
-            sizer=control_sizer)
-
         self._open_camera_button: wx.Button = self.add_control_button(
             parent=control_panel,
             sizer=control_sizer,
@@ -190,10 +169,6 @@ class BoardBuilderPanel(BasePanel):
 
 
         ### EVENT HANDLING ###
-        self._reference_target_submit_button.Bind(
-            event=wx.EVT_BUTTON,
-            handler=self.on_reference_target_submit_pressed)
-
         self._open_camera_button.Bind(
             event=wx.EVT_BUTTON,
             handler=self.on_open_camera_button_click)
@@ -336,25 +311,11 @@ class BoardBuilderPanel(BasePanel):
                     connection_label=detector_label,
                     request_series=request_series))
             self._current_phase = ACTIVE_PHASE_STARTING_GET_RESOLUTIONS
-
-    def on_reference_target_submit_pressed(self, _event: wx.CommandEvent) -> None:
-        request_series: MCastRequestSeries = MCastRequestSeries(series=[
-            (SetReferenceMarkerRequest(
-                marker_id=self._reference_marker_id_spinbox.spinbox.GetValue(),
-                marker_diameter=self._reference_marker_diameter_spinbox.spinbox.GetValue()))])
-        selected_board_builder_label: str = self._board_builder_selector.selector.GetStringSelection()
-        self._active_request_ids.append(self._connector.request_series_push(
-            connection_label=selected_board_builder_label,
-            request_series=request_series))
-        self._update_controls()
-
     def _update_controls(self) -> None:
-        self._board_builder_selector.Enable(False)
         self._reference_marker_id_spinbox.Enable(False)
         self._reference_target_submit_button.Enable(False)
         if len(self._active_request_ids) > 0:
             return  # We're waiting for something
-        self._board_builder_selector.Enable(True)
         self._reference_marker_id_spinbox.Enable(True)
         self._reference_target_submit_button.Enable(True)
 
