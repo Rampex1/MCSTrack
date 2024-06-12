@@ -139,8 +139,6 @@ class DetectorPanel(BasePanel):
     _detection_param_use_aruco_3_detection: ParameterCheckbox
     _detection_param_min_side_length_canonical_img: ParameterSpinboxInteger
     _detection_param_min_marker_length_ratio_orig: ParameterSpinboxFloat
-
-    _calibrator_selector: ParameterSelector
     _calibration_capture_button: wx.Button
 
     _image_panel: ImagePanel
@@ -228,6 +226,11 @@ class DetectorPanel(BasePanel):
             parent=control_panel,
             sizer=control_sizer,
             label="Annotate Rejected")
+
+        self._calibration_capture_button: wx.Button = self.add_control_button(
+            parent=control_panel,
+            sizer=control_sizer,
+            label="Capture Calibration Image")
 
         self.add_horizontal_line_to_spacer(
             parent=control_panel,
@@ -626,28 +629,6 @@ class DetectorPanel(BasePanel):
             sizer=control_sizer,
             label="Send Detection Parameters")
 
-        self.add_horizontal_line_to_spacer(
-            parent=control_panel,
-            sizer=control_sizer)
-
-        self.add_text_label(
-            parent=control_panel,
-            sizer=control_sizer,
-            label="Calibration",
-            font_size_delta=2,
-            bold=True)
-
-        self._calibrator_selector: ParameterSelector = self.add_control_selector(
-            parent=control_panel,
-            sizer=control_sizer,
-            label="Calibrator",
-            selectable_values=list())
-
-        self._calibration_capture_button: wx.Button = self.add_control_button(
-            parent=control_panel,
-            sizer=control_sizer,
-            label="Capture Image")
-
         control_spacer_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.HORIZONTAL)
         control_sizer.Add(
             sizer=control_spacer_sizer,
@@ -685,21 +666,16 @@ class DetectorPanel(BasePanel):
         self._send_detection_parameters_button.Bind(
             event=wx.EVT_BUTTON,
             handler=self.on_send_detection_parameters_pressed)
-        self._calibrator_selector.selector.Bind(
-            event=wx.EVT_CHOICE,
-            handler=self.on_calibrator_selected)
         self._calibration_capture_button.Bind(
             event=wx.EVT_BUTTON,
             handler=self.on_calibration_capture_pressed)
 
         self.disable_detector_controls()
         self.disable_parameter_controls()
-        self.disable_calibrator_controls()
 
     def begin_capture_calibration(self) -> None:
         # TODO: THIS NEEDS TO BE IN LOSSLESS (.PNG) FORMAT!!!
         selected_detector_label: str = self._detector_selector.selector.GetStringSelection()
-        selected_calibrator_label: str = self._calibrator_selector.selector.GetStringSelection()
         if self._live_image_base64 is None or len(self._live_image_base64) <= 0:
             self.status_message_source.enqueue_status_message(
                 severity="error",
@@ -712,7 +688,7 @@ class DetectorPanel(BasePanel):
                     format=_CAPTURE_FORMAT,
                     image_base64=self._live_image_base64)])
         self._connector.request_series_push(
-            connection_label=selected_calibrator_label,
+            connection_label=selected_detector_label,
             request_series=request_series)
 
     def begin_capture_snapshot(self):
@@ -821,17 +797,11 @@ class DetectorPanel(BasePanel):
         self.disable_detector_controls()
         self.disable_parameter_controls()
 
-    def disable_calibrator_controls(self):
-        self.set_calibrator_controls_enabled(enable=False)
-
     def disable_detector_controls(self):
         self.set_detector_controls_enabled(enable=False)
 
     def disable_parameter_controls(self):
         self.set_parameter_controls_enabled(enable=False)
-
-    def enable_calibrator_controls(self):
-        self.set_calibrator_controls_enabled(enable=True)
 
     def enable_detector_controls(self):
         self.set_detector_controls_enabled(enable=True)
@@ -841,9 +811,6 @@ class DetectorPanel(BasePanel):
 
     def on_calibration_capture_pressed(self, _event: wx.CommandEvent):
         self.begin_capture_calibration()
-
-    def on_calibrator_selected(self, _event: wx.CommandEvent):
-        self.enable_calibrator_controls()
 
     def on_capture_start_pressed(self, _event: wx.CommandEvent):
         self.begin_capture_start()
@@ -864,8 +831,6 @@ class DetectorPanel(BasePanel):
         super().on_page_select()
         available_detector_labels: list[str] = self._connector.get_connected_detector_labels()
         self._detector_selector.set_options(option_list=available_detector_labels)
-        available_calibrator_labels: list[str] = self._connector.get_connected_calibrator_labels()
-        self._calibrator_selector.set_options(option_list=available_calibrator_labels)
 
     def on_page_deselect(self):
         super().on_page_deselect()
@@ -873,12 +838,6 @@ class DetectorPanel(BasePanel):
         self.disable_detector_controls()
 
         # TODO: Send stop command if camera is still going
-
-    def set_calibrator_controls_enabled(
-        self,
-        enable: bool
-    ) -> None:
-        self._calibration_capture_button.Enable(enable=enable)
 
     # noinspection DuplicatedCode
     def set_detector_controls_enabled(
@@ -890,6 +849,7 @@ class DetectorPanel(BasePanel):
         self._capture_stop_button.Enable(enable=enable)
         self._annotate_detected_checkbox.Enable(enable=enable)
         self._annotate_rejected_checkbox.Enable(enable=enable)
+        self._calibration_capture_button.Enable(enable=enable)
 
     # noinspection DuplicatedCode
     def set_parameter_controls_enabled(

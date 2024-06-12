@@ -1,0 +1,9 @@
+{
+  "shader_label": "basic",
+  "properties": {
+    "b_ambientColor": [0.0, 0.0, 0.3],
+    "b_diffuseColor": [0.3, 0.3, 0.7],
+    "b_opacity": [1.0],
+    "b_lightDirectionView": [-0.30151, -0.30151, -0.90453]
+  }
+}

@@ -1,8 +1,12 @@
 fastapi==0.100.0
 fastapi-utils==0.2.1
 hjson
+numpy
+numpy-stl
 opencv-contrib-python==4.5.5.64
 pydantic~=1.10.15
+PyOpenGL==3.1.7
+PyOpenGL-accelerate==3.1.7
 scipy
 uvicorn[standard]
 websocket

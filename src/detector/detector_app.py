@@ -15,6 +15,8 @@ from src.detector.api import \
     GetMarkerSnapshotsResponse, \
     SetCaptureDeviceRequest, \
     SetDetectionParametersRequest
+from src.calibrator import Calibrator
+from src.calibrator.fileio import CalibratorConfiguration
 import base64
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +35,9 @@ logger = logging.getLogger(__name__)
 def create_app() -> FastAPI:
     detector_configuration_filepath: str = os.path.join(os.path.dirname(__file__), "..", "..", "data", "config.json")
     detector_configuration: DetectorConfiguration
+    calibrator_configuration_filepath: str = os.path.join(os.path.dirname(__file__), "..", "..", "data",
+                                                          "calibrator_config.json")
+    calibrator_configuration: CalibratorConfiguration
     #camera_interface: AbstractCameraInterface
     marker_interface: AbstractMarkerInterface
 
@@ -41,10 +46,15 @@ def create_app() -> FastAPI:
         detector_configuration_dict = hjson.loads(detector_configuration_file_contents)
         detector_configuration = DetectorConfiguration(**detector_configuration_dict)
 
+    with open(calibrator_configuration_filepath, 'r') as infile:  # Load calibrator configuration
+        calibrator_configuration_file_contents: str = infile.read()
+        calibrator_configuration_dict = hjson.loads(calibrator_configuration_file_contents)
+        calibrator_configuration = CalibratorConfiguration(**calibrator_configuration_dict)
+
     #camera_interface = Detector.USBWebcamWithOpenCV()
     marker_interface = ArucoMarker()
     
-    detector = Detector(detector_configuration=detector_configuration,marker_interface=marker_interface)
+    detector = Detector(detector_configuration=detector_configuration,marker_interface=marker_interface, calibrator_configuration=calibrator_configuration)
     detector_app = FastAPI()
 
     # CORS Middleware

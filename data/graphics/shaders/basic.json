@@ -1,0 +1,10 @@
+{
+  "vertex_shader_label": "basic",
+  "fragment_shader_label": "basic",
+  "property_list": [
+    "b_ambientColor",
+    "b_diffuseColor",
+    "b_opacity",
+    "b_lightDirectionView"
+  ]
+}

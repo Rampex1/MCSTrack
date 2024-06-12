@@ -1,0 +1,16 @@
+{
+  "parts": [
+    {
+      "geometry_label": "coordinate_axis_x",
+      "material_label": "basic_red"
+    },
+    {
+      "geometry_label": "coordinate_axis_y",
+      "material_label": "basic_green"
+    },
+    {
+      "geometry_label": "coordinate_axis_z",
+      "material_label": "basic_blue"
+    }
+  ]
+}

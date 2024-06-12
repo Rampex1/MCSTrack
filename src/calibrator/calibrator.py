@@ -58,7 +58,7 @@ import uuid
 logger = logging.getLogger(__name__)
 
 
-class Calibrator(MCastComponent):
+class Calibrator:
 
     _configuration: CalibratorConfiguration
     _calibration_map: dict[DetectorResolution, CalibrationMapValue]
@@ -72,9 +72,6 @@ class Calibrator(MCastComponent):
         self,
         calibrator_configuration: CalibratorConfiguration
     ):
-        super().__init__(
-            status_source_label=calibrator_configuration.serial_identifier,
-            send_status_messages_to_logger=True)
         self._configuration = calibrator_configuration
         if not self._exists(path=self._configuration.data_path, pathtype="path", create_path=True):
             self.add_status_message(severity="critical", message="Data path does not exist and could not be created.")
@@ -91,17 +88,6 @@ class Calibrator(MCastComponent):
 
     def supported_request_types(self) -> dict[type[MCastRequest], Callable[[dict], MCastResponse]]:
         return_value: dict[type[MCastRequest], Callable[[dict], MCastResponse]] = super().supported_request_types()
-        return_value.update({
-            AddCalibrationImageRequest: self.add_calibration_image,
-            CalibrateRequest: self.calibrate,
-            DeleteStagedRequest: self.delete_staged,
-            GetCalibrationImageRequest: self.get_calibration_image,
-            GetCalibrationResultRequest: self.get_calibration_result,
-            ListCalibrationDetectorResolutionsRequest: self.list_calibration_detector_resolutions,
-            ListCalibrationImageMetadataRequest: self.list_calibration_image_metadata_list,
-            ListCalibrationResultMetadataRequest: self.list_calibration_result_metadata_list,
-            UpdateCalibrationImageMetadataRequest: self.update_calibration_image_metadata,
-            UpdateCalibrationResultMetadataRequest: self.update_calibration_result_metadata})
         return return_value
 
     def add_calibration_image(self, **kwargs) -> AddCalibrationImageResponse | ErrorResponse:

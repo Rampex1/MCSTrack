@@ -15,6 +15,19 @@ from src.detector.api import \
     StartCaptureRequest, \
     StopCaptureRequest
 from src.detector.fileio import DetectorConfiguration
+from src.calibrator import Calibrator
+from src.calibrator.fileio import CalibratorConfiguration
+from src.calibrator.api import \
+    AddCalibrationImageRequest, \
+    CalibrateRequest, \
+    DeleteStagedRequest, \
+    GetCalibrationImageRequest, \
+    GetCalibrationResultRequest, \
+    ListCalibrationDetectorResolutionsRequest, \
+    ListCalibrationImageMetadataRequest, \
+    ListCalibrationResultMetadataRequest, \
+    UpdateCalibrationImageMetadataRequest, \
+    UpdateCalibrationResultMetadataRequest
 from src.common import \
     EmptyResponse, \
     ErrorResponse, \
@@ -47,6 +60,7 @@ logger = logging.getLogger(__name__)
 class Detector(MCastComponent):
 
     _detector_configuration: DetectorConfiguration
+    _calibrator: Calibrator
 
     #_camera_interface: AbstractCameraInterface
     _marker_interface: AbstractMarkerInterface
@@ -63,14 +77,15 @@ class Detector(MCastComponent):
     def __init__(
         self,
         detector_configuration: DetectorConfiguration,
-        marker_interface: AbstractMarkerInterface
+        marker_interface: AbstractMarkerInterface,
+        calibrator_configuration: CalibratorConfiguration
     ):
         super().__init__(
             status_source_label=detector_configuration.serial_identifier,
             send_status_messages_to_logger=True)
         
         self._detector_configuration = detector_configuration
-
+        self._calibrator = Calibrator(calibrator_configuration)
 
         # move to camera class
         self._capture = None
@@ -131,6 +146,8 @@ class Detector(MCastComponent):
     def supported_request_types(self) -> dict[type[MCastRequest], Callable[[dict], MCastResponse]]:
         return_value: dict[type[MCastRequest], Callable[[dict], MCastResponse]] = super().supported_request_types()
         return_value.update({
+
+            # Detector Requests
             GetCaptureDeviceRequest: self.get_capture_device,
             GetCaptureImageRequest: self.get_capture_image,
             GetCapturePropertiesRequest: self.get_capture_properties,
@@ -140,9 +157,21 @@ class Detector(MCastComponent):
             SetCapturePropertiesRequest: self.set_capture_properties,
             SetDetectionParametersRequest: self.set_detection_parameters,
             StartCaptureRequest: self.start_capture,
-            StopCaptureRequest: self.stop_capture})
+            StopCaptureRequest: self.stop_capture,
+
+            # Calibrator Requests
+            AddCalibrationImageRequest: self._calibrator.add_calibration_image,
+            CalibrateRequest: self._calibrator.calibrate,
+            DeleteStagedRequest: self._calibrator.delete_staged,
+            GetCalibrationImageRequest: self._calibrator.get_calibration_image,
+            GetCalibrationResultRequest: self._calibrator.get_calibration_result,
+            ListCalibrationDetectorResolutionsRequest: self._calibrator.list_calibration_detector_resolutions,
+            ListCalibrationImageMetadataRequest: self._calibrator.list_calibration_image_metadata_list,
+            ListCalibrationResultMetadataRequest: self._calibrator.list_calibration_result_metadata_list,
+            UpdateCalibrationImageMetadataRequest: self._calibrator.update_calibration_image_metadata,
+            UpdateCalibrationResultMetadataRequest: self._calibrator.update_calibration_result_metadata})
         return return_value
-    
+
     def set_capture_device(self, **kwargs) -> EmptyResponse | ErrorResponse:
         """
         :key request: SetCaptureDeviceRequest

@@ -3,8 +3,6 @@ from .capture_status import CaptureStatus
 from .component_connection_static import ComponentConnectionStatic
 from .component_role_label import \
     ComponentRoleLabel, \
-    COMPONENT_ROLE_LABEL_BOARD_BUILDER, \
-    COMPONENT_ROLE_LABEL_CALIBRATOR, \
     COMPONENT_ROLE_LABEL_DETECTOR, \
     COMPONENT_ROLE_LABEL_POSE_SOLVER
 from .corner_refinement import \

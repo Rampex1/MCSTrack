@@ -10,7 +10,6 @@ from src.common import \
     DequeueStatusMessagesResponse, \
     StatusMessageSource
 from src.common.structures import \
-    COMPONENT_ROLE_LABEL_CALIBRATOR, \
     COMPONENT_ROLE_LABEL_DETECTOR, \
     COMPONENT_ROLE_LABEL_POSE_SOLVER, \
     ComponentConnectionStatic, \
@@ -88,7 +87,6 @@ class ConnectorPanel(BasePanel):
             label="Role",
             selectable_values=[
                 COMPONENT_ROLE_LABEL_DETECTOR,
-                COMPONENT_ROLE_LABEL_CALIBRATOR,
                 COMPONENT_ROLE_LABEL_POSE_SOLVER])
 
         self._parameter_ipaddress = self.add_control_text_input(
