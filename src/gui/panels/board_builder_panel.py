@@ -8,7 +8,7 @@ from cv2 import aruco
 
 from .base_panel import BasePanel
 from .feedback import ImagePanel
-from .parameters import ParameterSelector, ParameterSpinboxFloat, ParameterSpinboxInteger
+from .parameters import ParameterSpinboxFloat, ParameterSpinboxInteger
 
 from src.calibrator.api import ListCalibrationDetectorResolutionsRequest
 from src.detector.api import GetCapturePropertiesRequest
@@ -57,6 +57,8 @@ class BoardBuilderPanel(BasePanel):
     _reset_button: wx.Button
     _close_camera_button: wx.Button
 
+    _image_panel: ImagePanel
+
     # TODO: This will not be hard coded
     REFERENCE_MARKER_ID: Final[int] = 0
     MARKER_SIZE_MM: Final[float] = 10.0
@@ -73,6 +75,7 @@ class BoardBuilderPanel(BasePanel):
         tangential_distortion_coefficients=[
             -0.00454124371092251,
             0.0009635939551320261])
+
 
     def __init__(
         self,
@@ -211,26 +214,6 @@ class BoardBuilderPanel(BasePanel):
     ### UPDATE ###
     def update_loop(self) -> None:
         super().update_loop()
-        self._is_updating = True
-
-        ui_needs_update: bool = False
-
-        if len(self._active_request_ids) > 0:
-            completed_request_ids: list[uuid.UUID] = list()
-            for request_id in self._active_request_ids:
-                _, remaining_request_id = self.update_request(request_id=request_id)
-                if remaining_request_id is None:
-                    ui_needs_update = True
-                    completed_request_ids.append(request_id)
-            for request_id in completed_request_ids:
-                self._active_request_ids.remove(request_id)
-            if len(self._active_request_ids) == 0:
-                self.on_active_request_ids_processed()
-
-        if ui_needs_update:
-            self._update_controls()
-
-        self._is_updating = False
 
     def update_frame(self, event):
         if self.cap is None or not self.cap.isOpened():
@@ -264,53 +247,9 @@ class BoardBuilderPanel(BasePanel):
         height, width = frame.shape[:2]
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         bitmap = wx.Bitmap.FromBuffer(width, height, frame_rgb)
-        self._image_panel.SetBitmap(bitmap)
+        self._image_panel.set_bitmap(bitmap)
         self.Refresh()
 
-
-    def handle_response_series(
-        self,
-        response_series: MCastResponseSeries,
-        task_description: Optional[str] = None,
-        expected_response_count: Optional[int] = None
-    ) -> bool:
-        success: bool = super().handle_response_series(
-            response_series=response_series,
-            task_description=task_description,
-            expected_response_count=expected_response_count)
-        if not success:
-            return False
-
-        success: bool = True
-        response: MCastResponse
-        for response in response_series.series:
-            if isinstance(response, ErrorResponse):
-                self.handle_error_response(response=response)
-                success = False
-            elif not isinstance(response, EmptyResponse):
-                self.handle_unknown_response(response=response)
-                success = False
-        return success
-
-    def on_active_request_ids_processed(self) -> None:
-        if self._current_phase == ACTIVE_PHASE_STARTING_CAPTURE:
-            self.status_message_source.enqueue_status_message(
-                severity="debug",
-                message="ACTIVE_PHASE_STARTING_CAPTURE complete")
-            calibrator_labels: list[str] = self._connector.get_connected_calibrator_labels()
-            request_series: MCastRequestSeries = MCastRequestSeries(
-                series=[ListCalibrationDetectorResolutionsRequest()])
-            self._active_request_ids.append(self._connector.request_series_push(
-                connection_label=calibrator_labels[0],
-                request_series=request_series))
-            detector_labels: list[str] = self._connector.get_connected_detector_labels()
-            for detector_label in detector_labels:
-                request_series: MCastRequestSeries = MCastRequestSeries(
-                    series=[GetCapturePropertiesRequest()])
-                self._active_request_ids.append(self._connector.request_series_push(
-                    connection_label=detector_label,
-                    request_series=request_series))
-            self._current_phase = ACTIVE_PHASE_STARTING_GET_RESOLUTIONS
     def _update_controls(self) -> None:
         self._reference_marker_id_spinbox.Enable(False)
         self._reference_target_submit_button.Enable(False)
@@ -364,7 +303,7 @@ class BoardBuilderPanel(BasePanel):
             self.timer.Stop()
             self.cap.release()
             self.cap = None
-            self._image_panel.SetBitmap(wx.Bitmap())
+            self._image_panel.set_bitmap(wx.Bitmap())
             self.Refresh()
 
     def draw_all_corners(self, corners_dict, frame):
@@ -377,20 +316,3 @@ class BoardBuilderPanel(BasePanel):
             for corner in corners_location:
                 x, y, z = corner
                 cv2.circle(frame, (int(x) + 200, -int(y) + 200), 4, marker_color, -1)
-
-
-class ImagePanel(wx.Panel):
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.bitmap = None
-        self.Bind(wx.EVT_PAINT, self.on_paint)
-
-    def SetBitmap(self, bitmap):
-        self.bitmap = bitmap
-        self.Refresh()
-
-    def on_paint(self, event):
-        dc = wx.PaintDC(self)
-        if self.bitmap:
-            dc.DrawBitmap(self.bitmap, 0, 0)
-
