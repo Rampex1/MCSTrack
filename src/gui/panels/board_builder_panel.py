@@ -41,7 +41,6 @@ ACTIVE_PHASE_STOPPING: Final[int] = 6
 class BoardBuilderPanel(BasePanel):
     _connector: Connector
 
-    _board_builder_selector: ParameterSelector
     _reference_marker_id_spinbox: ParameterSpinboxInteger
     _reference_marker_diameter_spinbox: ParameterSpinboxFloat
     _reference_target_submit_button: wx.Button
@@ -103,16 +102,6 @@ class BoardBuilderPanel(BasePanel):
             vert=wx.SHOW_SB_ALWAYS)
 
         control_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.VERTICAL)
-
-        self._board_builder_selector = self.add_control_selector(
-            parent=control_panel,
-            sizer=control_sizer,
-            label="Board Builder",
-            selectable_values=list())
-
-        self.add_horizontal_line_to_spacer(
-            parent=control_panel,
-            sizer=control_sizer)
 
         self._reference_marker_id_spinbox = self.add_control_spinbox_integer(
             parent=control_panel,
@@ -201,10 +190,6 @@ class BoardBuilderPanel(BasePanel):
 
 
         ### EVENT HANDLING ###
-        self._board_builder_selector.selector.Bind(
-            event=wx.EVT_CHOICE,
-            handler=self.on_board_builder_select)
-
         self._reference_target_submit_button.Bind(
             event=wx.EVT_BUTTON,
             handler=self.on_reference_target_submit_pressed)
@@ -351,9 +336,6 @@ class BoardBuilderPanel(BasePanel):
                     connection_label=detector_label,
                     request_series=request_series))
             self._current_phase = ACTIVE_PHASE_STARTING_GET_RESOLUTIONS
-
-    def on_board_builder_select(self, _event: wx.CommandEvent) -> None:
-        self._update_controls()
 
     def on_reference_target_submit_pressed(self, _event: wx.CommandEvent) -> None:
         request_series: MCastRequestSeries = MCastRequestSeries(series=[
