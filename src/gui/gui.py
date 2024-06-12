@@ -31,6 +31,7 @@ class ControllerFrame(wx.Frame):
     _connector_panel: ConnectorPanel
     _detector_panel: DetectorPanel
     _calibrator_panel: CalibratorPanel
+    _board_builder_panel: BoardBuilderPanel
     _pose_solver_panel: PoseSolverPanel
 
     def __init__(
@@ -114,6 +115,7 @@ class ControllerFrame(wx.Frame):
             self._connector_panel,
             self._detector_panel,
             self._calibrator_panel,
+            self._board_builder_panel,
             self._pose_solver_panel]
         for page in pages:
             page_index: int = self._notebook.FindPage(page)

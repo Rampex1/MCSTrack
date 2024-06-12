@@ -33,15 +33,7 @@ from src.common import (
 
 logger = logging.getLogger(__name__)
 
-# TODO: ????
-ACTIVE_PHASE_IDLE: Final[int] = 0
-ACTIVE_PHASE_STARTING_CAPTURE: Final[int] = 1
-ACTIVE_PHASE_STARTING_GET_RESOLUTIONS: Final[int] = 2
-ACTIVE_PHASE_STARTING_LIST_INTRINSICS: Final[int] = 3  # This and next phase to be combined with modified API
-ACTIVE_PHASE_STARTING_GET_INTRINSICS: Final[int] = 4
-ACTIVE_PHASE_STARTING_FINAL: Final[int] = 5
-ACTIVE_PHASE_STOPPING: Final[int] = 6
-
+_UPDATE_INTERVAL_MILLISECONDS: Final[int] = 16
 
 class BoardBuilderPanel(BasePanel):
     _connector: Connector
@@ -195,7 +187,6 @@ class BoardBuilderPanel(BasePanel):
         ### INIT ###
         self.cap = None
         self.timer = wx.Timer(self)
-        self.Bind(wx.EVT_TIMER, self.update_frame, self.timer)
         self._collect_data_button.Enable(False)
         self._build_board_button.Enable(False)
         self._setting_reference = False
@@ -215,7 +206,6 @@ class BoardBuilderPanel(BasePanel):
     def update_loop(self) -> None:
         super().update_loop()
 
-    def update_frame(self, event):
         if self.cap is None or not self.cap.isOpened():
             return
 
@@ -249,6 +239,9 @@ class BoardBuilderPanel(BasePanel):
         bitmap = wx.Bitmap.FromBuffer(width, height, frame_rgb)
         self._image_panel.set_bitmap(bitmap)
         self.Refresh()
+
+
+
 
     def _update_controls(self) -> None:
         self._reference_marker_id_spinbox.Enable(False)
