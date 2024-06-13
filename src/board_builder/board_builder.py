@@ -20,7 +20,6 @@ class BoardBuilder:
         self._visible_markers = []
         self._index_to_marker_uuid = {}
         self.pose_solver = BoardBuilderPoseSolver()
-        self.pose_solver.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
         self.pose_solver.set_reference_target(TargetMarker(
             marker_id=self.REFERENCE_MARKER_ID,
             marker_size=self.MARKER_SIZE_MM))
@@ -127,7 +126,7 @@ class BoardBuilder:
         detector_label: str,
         intrinsic_parameters: IntrinsicParameters
     ) -> None:
-        self.pose_solver.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
+        self.pose_solver.set_intrinsic_parameters(detector_label, intrinsic_parameters)
 
     def locate_reference_markers(self, ids, corners):
         reference_visible = False

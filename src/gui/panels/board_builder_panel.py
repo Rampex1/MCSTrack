@@ -24,22 +24,19 @@ _UPDATE_INTERVAL_MILLISECONDS: Final[int] = 16
 class BoardBuilderPanel(BasePanel):
     _connector: Connector
 
-    _reference_marker_id_spinbox: ParameterSpinboxInteger
-    _reference_marker_diameter_spinbox: ParameterSpinboxFloat
-    _reference_target_submit_button: wx.Button
-
     _open_camera_button: wx.Button
+    _close_camera_button: wx.Button
     _locate_reference_button: wx.Button
     _collect_data_button: wx.Button
     _build_board_button: wx.Button
-    _reset_button: wx.Button
-    _close_camera_button: wx.Button
 
     _image_panel: ImagePanel
 
-    # TODO: This will not be hard coded
+    # TODO: This will become a board
     REFERENCE_MARKER_ID: Final[int] = 0
     MARKER_SIZE_MM: Final[float] = 10.0
+
+    # TODO: This will be determined from calibration
     DETECTOR_GREEN_NAME: Final[str] = "default_camera"
     DETECTOR_GREEN_INTRINSICS: Final[IntrinsicParameters] = IntrinsicParameters(
         focal_length_x_px=629.7257712407858,
@@ -102,11 +99,31 @@ class BoardBuilderPanel(BasePanel):
 
         control_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.VERTICAL)
 
+        self.add_text_label(
+            parent=control_panel,
+            sizer=control_sizer,
+            label="Detector",
+            font_size_delta=2,
+            bold=True)
+
         self._open_camera_button: wx.Button = self.add_control_button(
             parent=control_panel,
             sizer=control_sizer,
             label="Open Camera"
         )
+
+        self._close_camera_button: wx.Button = self.add_control_button(
+            parent=control_panel,
+            sizer=control_sizer,
+            label="Close Camera"
+        )
+
+        self.add_text_label(
+            parent=control_panel,
+            sizer=control_sizer,
+            label="Board Builder",
+            font_size_delta=2,
+            bold=True)
 
         self._locate_reference_button: wx.Button = self.add_control_button(
             parent=control_panel,
@@ -124,18 +141,6 @@ class BoardBuilderPanel(BasePanel):
             parent=control_panel,
             sizer=control_sizer,
             label="Build Board"
-        )
-
-        self._reset_button: wx.Button = self.add_control_button(
-            parent=control_panel,
-            sizer=control_sizer,
-            label="Reset"
-        )
-
-        self._close_camera_button: wx.Button = self.add_control_button(
-            parent=control_panel,
-            sizer=control_sizer,
-            label="Close Camera"
         )
 
         control_spacer_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.HORIZONTAL)
@@ -175,22 +180,25 @@ class BoardBuilderPanel(BasePanel):
         self._build_board_button.Bind(
             event=wx.EVT_BUTTON,
             handler=self.on_build_board_button_click)
-        self._reset_button.Bind(
-            event=wx.EVT_BUTTON,
-            handler=self.on_reset_button_click)
         self._close_camera_button.Bind(
             event=wx.EVT_BUTTON,
             handler=self.on_close_camera_button_click)
 
+        self._locate_reference_button.Enable(False)
         self._collect_data_button.Enable(False)
         self._build_board_button.Enable(False)
 
     ### UPDATE ###
-    def _update_controls(self) -> None:
-        self._reference_marker_id_spinbox.Enable(False)
-        self._reference_target_submit_button.Enable(False)
-        self._reference_marker_id_spinbox.Enable(True)
-        self._reference_target_submit_button.Enable(True)
+    def _reset(self) -> None:
+        logger.info("Reset button clicked")
+        self._locate_reference_button.Enable(False)
+        self._collect_data_button.Enable(False)
+        self._build_board_button.Enable(False)
+        self._setting_reference = False
+        self._collecting_data = False
+        self._building_board = False
+        self.board_builder = BoardBuilder(self.REFERENCE_MARKER_ID, self.MARKER_SIZE_MM, self.DETECTOR_GREEN_NAME,
+                                          self.DETECTOR_GREEN_INTRINSICS)
 
     def update_loop(self) -> None:
         super().update_loop()
@@ -211,6 +219,7 @@ class BoardBuilderPanel(BasePanel):
         aruco.drawDetectedMarkers(frame, corners, ids)
 
         if self._setting_reference:
+            self.board_builder.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
             self.board_builder.locate_reference_markers(ids, corners)
 
         elif self._collecting_data:
@@ -232,50 +241,41 @@ class BoardBuilderPanel(BasePanel):
     ### MAIN BUTTONS ###
     def on_open_camera_button_click(self, event: wx.CommandEvent) -> None:
         # Logic to open the camera goes here
-        logger.info("Open Camera button clicked")
         self.cap = cv2.VideoCapture(1)
         if not self.cap.isOpened():
             wx.MessageBox("Cannot open camera", "Error", wx.OK | wx.ICON_ERROR)
             return
         self.timer.Start(1000 // 30)
-
-    def on_locate_reference_button_click(self, event: wx.CommandEvent) -> None:
-        logger.info("Set reference button clicked")
-        self._collect_data_button.Enable(True)
-        self._setting_reference = True
-        self._collecting_data = False
-        self._building_board = False
-
-    def on_collect_data_button_click(self, event: wx.CommandEvent) -> None:
-        logger.info("Collect Data button clicked")
-        self._build_board_button.Enable(True)
-        self._setting_reference = False
-        self._collecting_data = True
-        self._building_board = False
-
-    def on_build_board_button_click(self, event: wx.CommandEvent) -> None:
-        logger.info("Build Board button clicked")
-        self._setting_reference = False
-        self._collecting_data = False
-        self._building_board = True
-
-    def on_reset_button_click(self, event: wx.CommandEvent) -> None:
-        logger.info("Reset button clicked")
-        self._collect_data_button.Enable(False)
-        self._build_board_button.Enable(False)
-        self._setting_reference = False
-        self._collecting_data = False
-        self._building_board = False
-        self.board_builder = BoardBuilder(self.REFERENCE_MARKER_ID, self.MARKER_SIZE_MM, self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
+        self._locate_reference_button.Enable(True)
 
     def on_close_camera_button_click(self, event: wx.CommandEvent) -> None:
-        logger.info("Close Camera button clicked")
+        self._reset()
         if self.cap is not None and self.cap.isOpened():
             self.timer.Stop()
             self.cap.release()
             self.cap = None
             self._image_panel.set_bitmap(wx.Bitmap())
             self.Refresh()
+
+
+    def on_locate_reference_button_click(self, event: wx.CommandEvent) -> None:
+        self._reset()
+        self._locate_reference_button.Enable(True)
+        self._collect_data_button.Enable(True)
+        self._setting_reference = True
+        self._collecting_data = False
+        self._building_board = False
+
+    def on_collect_data_button_click(self, event: wx.CommandEvent) -> None:
+        self._build_board_button.Enable(True)
+        self._setting_reference = False
+        self._collecting_data = True
+        self._building_board = False
+
+    def on_build_board_button_click(self, event: wx.CommandEvent) -> None:
+        self._setting_reference = False
+        self._collecting_data = False
+        self._building_board = True
 
     def draw_all_corners(self, corners_dict, frame):
         """
