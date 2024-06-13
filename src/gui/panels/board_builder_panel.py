@@ -10,24 +10,10 @@ from .base_panel import BasePanel
 from .feedback import ImagePanel
 from .parameters import ParameterSpinboxFloat, ParameterSpinboxInteger
 
-from src.calibrator.api import ListCalibrationDetectorResolutionsRequest
-from src.detector.api import GetCapturePropertiesRequest
-from src.board_builder.api import BuildBoardRequest, \
-    CollectDataRequest, \
-    LocateReferenceMarkersRequest, \
-    SetIntrinsicParametersRequest, \
-    StartBoardBuilderRequest, \
-    StopBoardBuilderRequest
 from src.board_builder import BoardBuilder
-
 from src.common.structures import IntrinsicParameters
 from src.connector import Connector
 from src.common import (
-    ErrorResponse,
-    EmptyResponse,
-    MCastRequestSeries,
-    MCastResponse,
-    MCastResponseSeries,
     StatusMessageSource
 )
 
@@ -68,7 +54,6 @@ class BoardBuilderPanel(BasePanel):
             -0.00454124371092251,
             0.0009635939551320261])
 
-
     def __init__(
         self,
         parent: wx.Window,
@@ -83,7 +68,21 @@ class BoardBuilderPanel(BasePanel):
             name=name)
 
         self._connector = connector
-        self._active_request_ids = list()
+
+        self.cap = None
+        self.timer = wx.Timer(self)
+        self._setting_reference = False
+        self._collecting_data = False
+        self._building_board = False
+
+        self.board_builder = BoardBuilder(self.REFERENCE_MARKER_ID, self.MARKER_SIZE_MM, self.DETECTOR_GREEN_NAME,
+                                          self.DETECTOR_GREEN_INTRINSICS)
+        self.marker_color = [
+            (0, 0, 255),  # Red
+            (0, 255, 0),  # Green
+            (255, 0, 0),  # Blue
+            (0, 255, 255),  # Cyan
+        ]
 
         ### USER INTERFACE FUNCTIONALITIES AND BUTTONS ###
         horizontal_split_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.HORIZONTAL)
@@ -183,26 +182,16 @@ class BoardBuilderPanel(BasePanel):
             event=wx.EVT_BUTTON,
             handler=self.on_close_camera_button_click)
 
-        # TODO: IM HERE
-        ### INIT ###
-        self.cap = None
-        self.timer = wx.Timer(self)
         self._collect_data_button.Enable(False)
         self._build_board_button.Enable(False)
-        self._setting_reference = False
-        self._collecting_data = False
-        self._building_board = False
-
-        ### BOARD BUILDER INIT ###
-        self.board_builder = BoardBuilder(self.REFERENCE_MARKER_ID, self.MARKER_SIZE_MM, self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
-        self.marker_color = [
-            (0, 0, 255),  # Red
-            (0, 255, 0),  # Green
-            (255, 0, 0),  # Blue
-            (0, 255, 255),  # Cyan
-        ]
 
     ### UPDATE ###
+    def _update_controls(self) -> None:
+        self._reference_marker_id_spinbox.Enable(False)
+        self._reference_target_submit_button.Enable(False)
+        self._reference_marker_id_spinbox.Enable(True)
+        self._reference_target_submit_button.Enable(True)
+
     def update_loop(self) -> None:
         super().update_loop()
 
@@ -239,17 +228,6 @@ class BoardBuilderPanel(BasePanel):
         bitmap = wx.Bitmap.FromBuffer(width, height, frame_rgb)
         self._image_panel.set_bitmap(bitmap)
         self.Refresh()
-
-
-
-
-    def _update_controls(self) -> None:
-        self._reference_marker_id_spinbox.Enable(False)
-        self._reference_target_submit_button.Enable(False)
-        if len(self._active_request_ids) > 0:
-            return  # We're waiting for something
-        self._reference_marker_id_spinbox.Enable(True)
-        self._reference_target_submit_button.Enable(True)
 
     ### MAIN BUTTONS ###
     def on_open_camera_button_click(self, event: wx.CommandEvent) -> None:
