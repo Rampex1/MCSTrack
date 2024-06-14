@@ -125,7 +125,7 @@ class BoardBuilderPanel(BasePanel):
             font_size_delta=2,
             bold=True)
 
-        self._locate_reference_button: wx.Button = self.add_control_button(
+        self._locate_reference_button: wx.ToggleButton = self.add_toggle_button(
             parent=control_panel,
             sizer=control_sizer,
             label="Locate Reference"
@@ -172,7 +172,7 @@ class BoardBuilderPanel(BasePanel):
             event=wx.EVT_BUTTON,
             handler=self.on_open_camera_button_click)
         self._locate_reference_button.Bind(
-            event=wx.EVT_BUTTON,
+            event=wx.EVT_TOGGLEBUTTON,
             handler=self.on_locate_reference_button_click)
         self._collect_data_button.Bind(
             event=wx.EVT_BUTTON,
@@ -241,7 +241,7 @@ class BoardBuilderPanel(BasePanel):
     ### MAIN BUTTONS ###
     def on_open_camera_button_click(self, event: wx.CommandEvent) -> None:
         # Logic to open the camera goes here
-        self.cap = cv2.VideoCapture(1)
+        self.cap = cv2.VideoCapture(0)
         if not self.cap.isOpened():
             wx.MessageBox("Cannot open camera", "Error", wx.OK | wx.ICON_ERROR)
             return
@@ -257,14 +257,19 @@ class BoardBuilderPanel(BasePanel):
             self._image_panel.set_bitmap(wx.Bitmap())
             self.Refresh()
 
-
     def on_locate_reference_button_click(self, event: wx.CommandEvent) -> None:
-        self._reset()
-        self._locate_reference_button.Enable(True)
-        self._collect_data_button.Enable(True)
-        self._setting_reference = True
-        self._collecting_data = False
-        self._building_board = False
+        if self._locate_reference_button.GetValue():
+            self._reset()
+            self._locate_reference_button.SetLabel("Stop Locate Reference")
+            self._locate_reference_button.Enable(True)
+            self._collect_data_button.Enable(False)
+            self._setting_reference = True
+            self._collecting_data = False
+            self._building_board = False
+        else:
+            self._locate_reference_button.SetLabel("Locate Reference")
+            self._setting_reference = False
+            self._collect_data_button.Enable(True)
 
     def on_collect_data_button_click(self, event: wx.CommandEvent) -> None:
         self._build_board_button.Enable(True)
