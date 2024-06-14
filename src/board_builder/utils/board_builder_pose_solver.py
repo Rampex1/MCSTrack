@@ -189,6 +189,32 @@ class BoardBuilderPoseSolver:
 
         self._now_timestamp = None
 
+        self._board_marker_ids = []
+
+        """
+        self.board_marker_positions = [
+            [10.0, 10.0, 0.0], [50.0, 10.0, 0.0], [90.0, 10.0, 0.0], [130.0, 10.0, 0.0], [170.0, 10.0, 0.0],
+            [10.0, 50.0, 0.0], [50.0, 50.0, 0.0], [90.0, 50.0, 0.0], [130.0, 50.0, 0.0], [170.0, 50.0, 0.0],
+            [10.0, 90.0, 0.0], [50.0, 90.0, 0.0], [90.0, 90.0, 0.0], [130.0, 90.0, 0.0], [170.0, 90.0, 0.0],
+            [10.0, 130.0, 0.0], [50.0, 130.0, 0.0], [90.0, 130.0, 0.0], [130.0, 130.0, 0.0], [170.0, 130.0, 0.0],
+            [30.0, 30.0, 0.0], [70.0, 30.0, 0.0], [110.0, 30.0, 0.0], [150.0, 30.0, 0.0], [190.0, 30.0, 0.0],
+            [30.0, 70.0, 0.0], [70.0, 70.0, 0.0], [110.0, 70.0, 0.0], [150.0, 70.0, 0.0], [190.0, 70.0, 0.0],
+            [30.0, 110.0, 0.0], [70.0, 110.0, 0.0], [110.0, 110.0, 0.0], [150.0, 110.0, 0.0], [190.0, 110.0, 0.0],
+            [30.0, 150.0, 0.0], [70.0, 150.0, 0.0], [110.0, 150.0, 0.0], [150.0, 150.0, 0.0], [190.0, 150.0, 0.0]
+        ]
+
+        self.board_marker_ids = [
+            36, 28, 20, 12, 4,
+            32, 24, 16, 8, 0,
+            37, 29, 21, 13, 5,
+            33, 25, 17, 9, 1,
+            38, 30, 22, 14, 6,
+            34, 26, 18, 10, 2,
+            39, 31, 23, 15, 7,
+            35, 27, 19, 11, 3
+        ]
+        """
+
     def add_marker_corners(
         self,
         detected_corners: list[MarkerCorners]
@@ -255,6 +281,9 @@ class BoardBuilderPoseSolver:
 
     def set_detector_poses(self, detector_poses_by_label):
         self._poses_average_by_detector_label = detector_poses_by_label
+
+    def set_board_marker_ids(self, board_marker_ids):
+        self._board_marker_ids = board_marker_ids
 
     def _calculate_marker_ray_set(
         self,
@@ -423,53 +452,34 @@ class BoardBuilderPoseSolver:
         quaternion = list(Rotation.from_matrix(object_to_reference_matrix[0:3, 0:3]).as_quat(canonical=True))
         return position, quaternion
 
-    def _update(self):
-        now_timestamp = datetime.datetime.now()
-        self._now_timestamp = now_timestamp
-        poses_need_update: bool = self._clear_old_values(now_timestamp)
-        poses_need_update |= len(self._marker_corners_since_update) > 0
-        if not poses_need_update:
-            return
-
-        self._poses_by_target_id.clear()
-
-        image_point_sets_by_image_key: dict[ImagePointSetsKey, list[MarkerCorners]] = dict()
-        for marker_corners in self._marker_corners_since_update:
-            detector_label = marker_corners.detector_label
-            image_point_sets_key = ImagePointSetsKey(detector_label, marker_corners.timestamp)
-            if image_point_sets_key not in image_point_sets_by_image_key:
-                image_point_sets_by_image_key[image_point_sets_key] = list()
-            image_point_sets_by_image_key[image_point_sets_key].append(marker_corners)
-        self._marker_corners_since_update.clear()
-
-        image_point_set_keys_with_reference_visible: list[ImagePointSetsKey] = list()
-        for image_point_sets_key, image_point_sets in image_point_sets_by_image_key.items():
-            image_point_set_keys_with_reference_visible.append(image_point_sets_key)
-
-        return image_point_sets_by_image_key, image_point_set_keys_with_reference_visible
-
     def _estimate_detector_pose_relative_to_reference(self):
         image_point_sets_by_image_key, image_point_set_keys_with_reference_visible = self._update()
         for image_point_sets_key, image_point_sets in image_point_sets_by_image_key.items():
             detector_label = image_point_sets_key.detector_label
-            image_point_set_reference: MarkerCorners | None = None
-            for image_point_set in image_point_sets:
-                if image_point_set.marker_id == self._reference_target.marker_id:
-                    image_point_set_reference = image_point_set
-                    break
-            if image_point_set_reference is None:
-                continue  # Reference not visible
+            board_image_point_sets = [
+                image_point_set for image_point_set in image_point_sets
+                if image_point_set.marker_id in self._board_marker_ids
+            ]
+
             intrinsics: IntrinsicParameters = self._intrinsics_by_detector_label[detector_label]
+
+            image_points = []
+            for image_point_set in board_image_point_sets:
+                image_points += image_point_set.points
+
+            length_reference_points = int(len(image_points) / 4)
             half_width: float = self._reference_target.marker_size / 2.0
-            reference_points: numpy.ndarray = numpy.array([
+            single_reference_points: numpy.ndarray = numpy.array([
                 [-half_width, half_width, 0.0],
                 [half_width, half_width, 0.0],
                 [half_width, -half_width, 0.0],
                 [-half_width, -half_width, 0.0]],
                 dtype="float32")
-            reference_points = numpy.reshape(reference_points, newshape=(1, 4, 3))
-            image_points: numpy.ndarray = numpy.array([image_point_set_reference.points], dtype="float32")
-            image_points = numpy.reshape(image_points, newshape=(1, 4, 2))
+            reference_points = numpy.tile(single_reference_points, (length_reference_points, 1))
+
+            reference_points = numpy.reshape(reference_points, newshape=(1, len(reference_points), 3))
+            image_points = numpy.reshape(numpy.array(image_points, dtype="float32"), newshape=(1, len(image_points), 2))
+
             reference_found: bool
             rotation_vector: numpy.ndarray
             translation_vector: numpy.ndarray
@@ -479,7 +489,8 @@ class BoardBuilderPoseSolver:
                 cameraMatrix=numpy.asarray(intrinsics.get_matrix(), dtype="float32"),
                 distCoeffs=numpy.asarray(intrinsics.get_distortion_coefficients(), dtype="float32"))
             if not reference_found:
-                continue  # Camera does not see reference target
+                continue  # Camera does not see reference board
+
             rotation_vector = rotation_vector.flatten()
             translation_vector = translation_vector.flatten()
             reference_to_camera_matrix = numpy.identity(4, dtype="float32")
@@ -487,6 +498,7 @@ class BoardBuilderPoseSolver:
             reference_to_camera_matrix[0:3, 3] = translation_vector
             reference_to_detector_matrix = transformation_image_to_opengl(reference_to_camera_matrix)
             detector_to_reference_opengl = numpy.linalg.inv(reference_to_detector_matrix)
+            print(Matrix4x4.from_numpy_array(detector_to_reference_opengl))
             self._poses_by_detector_label[detector_label] = Matrix4x4.from_numpy_array(detector_to_reference_opengl)
 
     def _estimate_target_pose_relative_to_reference(self):
@@ -747,3 +759,28 @@ class BoardBuilderPoseSolver:
             self._target_extrapolation_poses_by_target_id[target_id].append(pose)
 
             self._poses_by_target_id[target_id] = pose
+
+    def _update(self):
+        now_timestamp = datetime.datetime.now()
+        self._now_timestamp = now_timestamp
+        poses_need_update: bool = self._clear_old_values(now_timestamp)
+        poses_need_update |= len(self._marker_corners_since_update) > 0
+        if not poses_need_update:
+            return
+
+        self._poses_by_target_id.clear()
+
+        image_point_sets_by_image_key: dict[ImagePointSetsKey, list[MarkerCorners]] = dict()
+        for marker_corners in self._marker_corners_since_update:
+            detector_label = marker_corners.detector_label
+            image_point_sets_key = ImagePointSetsKey(detector_label, marker_corners.timestamp)
+            if image_point_sets_key not in image_point_sets_by_image_key:
+                image_point_sets_by_image_key[image_point_sets_key] = list()
+            image_point_sets_by_image_key[image_point_sets_key].append(marker_corners)
+        self._marker_corners_since_update.clear()
+
+        image_point_set_keys_with_reference_visible: list[ImagePointSetsKey] = list()
+        for image_point_sets_key, image_point_sets in image_point_sets_by_image_key.items():
+            image_point_set_keys_with_reference_visible.append(image_point_sets_key)
+
+        return image_point_sets_by_image_key, image_point_set_keys_with_reference_visible

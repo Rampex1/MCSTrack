@@ -33,6 +33,16 @@ class BoardBuilderPanel(BasePanel):
     _image_panel: ImagePanel
 
     # TODO: This will become a board
+    BOARD_MARKER_IDS = [
+            36, 28, 20, 12, 4,
+            32, 24, 16, 8, 0,
+            37, 29, 21, 13, 5,
+            33, 25, 17, 9, 1,
+            38, 30, 22, 14, 6,
+            34, 26, 18, 10, 2,
+            39, 31, 23, 15, 7,
+            35, 27, 19, 11, 3
+        ]
     REFERENCE_MARKER_ID: Final[int] = 0
     MARKER_SIZE_MM: Final[float] = 10.0
 
@@ -220,6 +230,7 @@ class BoardBuilderPanel(BasePanel):
 
         if self._setting_reference:
             self.board_builder.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
+            self.board_builder.set_board_marker_ids(self.BOARD_MARKER_IDS)
             self.board_builder.locate_reference_markers(ids, corners)
 
         elif self._collecting_data:
