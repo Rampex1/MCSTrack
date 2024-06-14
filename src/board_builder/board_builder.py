@@ -114,7 +114,6 @@ class BoardBuilder:
                 self._visible_markers = visible_markers
 
     ### PUBLIC METHOD ###
-    # TODO: Single marker --> Board
     def set_intrinsic_parameters(
         self,
         detector_label: str,

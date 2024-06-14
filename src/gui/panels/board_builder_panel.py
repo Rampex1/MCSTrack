@@ -33,6 +33,7 @@ class BoardBuilderPanel(BasePanel):
     _image_panel: ImagePanel
 
     # TODO: User Input
+    # TODO: Feature where user chooses origin marker (Right now it just takes the first it reads)
     BOARD_MARKER_IDS = [
             36, 28, 20, 12, 4,
             32, 24, 16, 8, 0,
