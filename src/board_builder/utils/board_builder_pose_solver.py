@@ -187,7 +187,7 @@ class BoardBuilderPoseSolver:
         self._now_timestamp = None
 
         self._board_marker_ids = []
-        self._board_marker_size = 10
+        self._marker_size = 0
 
     def add_marker_corners(
         self,
@@ -247,8 +247,8 @@ class BoardBuilderPoseSolver:
     def set_board_marker_ids(self, board_marker_ids):
         self._board_marker_ids = board_marker_ids
 
-    def set_board_marker_size(self, board_marker_size):
-        self._board_marker_size = board_marker_size
+    def set_marker_size(self, marker_size):
+        self._marker_size = marker_size
 
     def _calculate_marker_ray_set(
         self,
@@ -433,7 +433,7 @@ class BoardBuilderPoseSolver:
                 image_points += image_point_set.points
 
             length_reference_points = int(len(image_points) / 4)
-            half_width: float = self._board_marker_size / 2.0
+            half_width: float = self._marker_size / 2.0
             single_reference_points: numpy.ndarray = numpy.array([
                 [-half_width, half_width, 0.0],
                 [half_width, half_width, 0.0],
