@@ -7,9 +7,8 @@ from src.pose_solver.structures import MarkerCorners, TargetMarker
 
 
 class BoardBuilder:
-    def __init__(self, marker_size_mm, detectors_name, detectors_intrinsics):
+    def __init__(self, detectors_name, detectors_intrinsics):
         ### PARAMETERS INIT ###
-        self.MARKER_SIZE_MM = marker_size_mm
         self.DETECTOR_GREEN_NAME = detectors_name
         self.DETECTOR_GREEN_INTRINSICS = detectors_intrinsics
 
@@ -19,6 +18,8 @@ class BoardBuilder:
         self._visible_markers = []
         self._index_to_marker_uuid = {}
         self.pose_solver = BoardBuilderPoseSolver()
+        # TODO: Remove
+        self.MARKER_SIZE_MM = 10
 
         ### MATRIX INIT ###
         self._matrix_index = 0
@@ -123,9 +124,6 @@ class BoardBuilder:
 
     def set_board_marker_ids(self, board_marker_ids):
         self.pose_solver.set_board_marker_ids(board_marker_ids)
-
-    def set_board_marker_size(self, board_marker_size):
-        self.pose_solver.set_board_marker_size(board_marker_size)
 
     def locate_reference_markers(self, ids, corners):
         reference_visible = False

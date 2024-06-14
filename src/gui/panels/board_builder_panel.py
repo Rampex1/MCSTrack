@@ -24,6 +24,8 @@ _UPDATE_INTERVAL_MILLISECONDS: Final[int] = 16
 class BoardBuilderPanel(BasePanel):
     _connector: Connector
 
+    _tracked_marker_diameter_spinbox: ParameterSpinboxFloat
+    _confirm_marker_size_button: wx.Button
     _open_camera_button: wx.Button
     _close_camera_button: wx.Button
     _locate_reference_button: wx.Button
@@ -82,8 +84,7 @@ class BoardBuilderPanel(BasePanel):
         self._collecting_data = False
         self._building_board = False
 
-        self.board_builder = BoardBuilder(self.MARKER_SIZE_MM, self.DETECTOR_GREEN_NAME,
-                                          self.DETECTOR_GREEN_INTRINSICS)
+        self.board_builder = BoardBuilder(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
         self.marker_color = [
             (0, 0, 255),  # Red
             (0, 255, 0),  # Green
@@ -108,6 +109,24 @@ class BoardBuilderPanel(BasePanel):
             vert=wx.SHOW_SB_ALWAYS)
 
         control_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.VERTICAL)
+
+        self._tracked_marker_diameter_spinbox: ParameterSpinboxFloat = self.add_control_spinbox_float(
+            parent=control_panel,
+            sizer=control_sizer,
+            label="Marker diameter (mm)",
+            minimum_value=1.0,
+            maximum_value=1000.0,
+            initial_value=10.0,
+            step_value=0.5)
+
+        self._confirm_marker_size_button: wx.Button = self.add_control_button(
+            parent=control_panel,
+            sizer=control_sizer,
+            label="Confirm marker size")
+
+        self.add_horizontal_line_to_spacer(
+            parent=control_panel,
+            sizer=control_sizer)
 
         self.add_text_label(
             parent=control_panel,
@@ -178,6 +197,9 @@ class BoardBuilderPanel(BasePanel):
 
 
         ### EVENT HANDLING ###
+        self._confirm_marker_size_button.Bind(
+            event=wx.EVT_BUTTON,
+            handler=self.on_confirm_marker_size_pressed)
         self._open_camera_button.Bind(
             event=wx.EVT_BUTTON,
             handler=self.on_open_camera_button_click)
@@ -207,8 +229,8 @@ class BoardBuilderPanel(BasePanel):
         self._setting_reference = False
         self._collecting_data = False
         self._building_board = False
-        self.board_builder = BoardBuilder(self.MARKER_SIZE_MM, self.DETECTOR_GREEN_NAME,
-                                          self.DETECTOR_GREEN_INTRINSICS)
+        self.board_builder = BoardBuilder(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
+        self.board_builder.pose_solver.set_board_marker_size(self._tracked_marker_diameter_spinbox.spinbox.GetValue())
 
     def update_loop(self) -> None:
         super().update_loop()
@@ -231,7 +253,6 @@ class BoardBuilderPanel(BasePanel):
         if self._setting_reference:
             self.board_builder.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
             self.board_builder.set_board_marker_ids(self.BOARD_MARKER_IDS)
-            self.board_builder.set_board_marker_size(self.MARKER_SIZE_MM)
             self.board_builder.locate_reference_markers(ids, corners)
 
         elif self._collecting_data:
@@ -251,6 +272,9 @@ class BoardBuilderPanel(BasePanel):
         self.Refresh()
 
     ### MAIN BUTTONS ###
+    def on_confirm_marker_size_pressed(self, _event: wx.CommandEvent) -> None:
+        self.board_builder.pose_solver.set_board_marker_size(self._tracked_marker_diameter_spinbox.spinbox.GetValue())
+
     def on_open_camera_button_click(self, event: wx.CommandEvent) -> None:
         # Logic to open the camera goes here
         self.cap = cv2.VideoCapture(0)
