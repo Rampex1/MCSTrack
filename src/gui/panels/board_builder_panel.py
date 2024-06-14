@@ -32,7 +32,7 @@ class BoardBuilderPanel(BasePanel):
 
     _image_panel: ImagePanel
 
-    # TODO: This will become a board
+    # TODO: User Input
     BOARD_MARKER_IDS = [
             36, 28, 20, 12, 4,
             32, 24, 16, 8, 0,
@@ -43,7 +43,6 @@ class BoardBuilderPanel(BasePanel):
             39, 31, 23, 15, 7,
             35, 27, 19, 11, 3
         ]
-    REFERENCE_MARKER_ID: Final[int] = 0
     MARKER_SIZE_MM: Final[float] = 10.0
 
     # TODO: This will be determined from calibration
@@ -82,7 +81,7 @@ class BoardBuilderPanel(BasePanel):
         self._collecting_data = False
         self._building_board = False
 
-        self.board_builder = BoardBuilder(self.REFERENCE_MARKER_ID, self.MARKER_SIZE_MM, self.DETECTOR_GREEN_NAME,
+        self.board_builder = BoardBuilder(self.MARKER_SIZE_MM, self.DETECTOR_GREEN_NAME,
                                           self.DETECTOR_GREEN_INTRINSICS)
         self.marker_color = [
             (0, 0, 255),  # Red
@@ -207,7 +206,7 @@ class BoardBuilderPanel(BasePanel):
         self._setting_reference = False
         self._collecting_data = False
         self._building_board = False
-        self.board_builder = BoardBuilder(self.REFERENCE_MARKER_ID, self.MARKER_SIZE_MM, self.DETECTOR_GREEN_NAME,
+        self.board_builder = BoardBuilder(self.MARKER_SIZE_MM, self.DETECTOR_GREEN_NAME,
                                           self.DETECTOR_GREEN_INTRINSICS)
 
     def update_loop(self) -> None:
@@ -231,6 +230,7 @@ class BoardBuilderPanel(BasePanel):
         if self._setting_reference:
             self.board_builder.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
             self.board_builder.set_board_marker_ids(self.BOARD_MARKER_IDS)
+            self.board_builder.set_board_marker_size(self.MARKER_SIZE_MM)
             self.board_builder.locate_reference_markers(ids, corners)
 
         elif self._collecting_data:

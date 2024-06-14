@@ -168,9 +168,6 @@ class BoardBuilderPoseSolver:
         self._intrinsics_by_detector_label = dict()
         self._parameters = PoseSolverParameters()
         self._targets = dict()
-        self._reference_target = TargetMarker(
-            marker_id=0,
-            marker_size=10)
         self._marker_corners_since_update = list()
         self._marker_rayset_by_marker_key = dict()
         self._alpha_poses_by_target_id = dict()
@@ -190,6 +187,7 @@ class BoardBuilderPoseSolver:
         self._now_timestamp = None
 
         self._board_marker_ids = []
+        self._board_marker_size = 10
 
         """
         self.board_marker_positions = [
@@ -267,23 +265,14 @@ class BoardBuilderPoseSolver:
     ) -> None:
         self._intrinsics_by_detector_label[detector_label] = intrinsic_parameters
 
-    def set_reference_target(
-        self,
-        target: Target
-    ) -> None:
-        if not isinstance(target, TargetMarker):
-            raise NotImplementedError("Only targets that are of type TargetMarker are currently supported.")
-        for tracked_target_id, tracked_target in self._targets.items():
-            if isinstance(tracked_target, TargetMarker) and target.marker_id == tracked_target.marker_id:
-                self._targets.pop(tracked_target_id)
-                break
-        self._reference_target = target
-
     def set_detector_poses(self, detector_poses_by_label):
         self._poses_average_by_detector_label = detector_poses_by_label
 
     def set_board_marker_ids(self, board_marker_ids):
         self._board_marker_ids = board_marker_ids
+
+    def set_board_marker_size(self, board_marker_size):
+        self._board_marker_size = board_marker_size
 
     def _calculate_marker_ray_set(
         self,
@@ -468,7 +457,8 @@ class BoardBuilderPoseSolver:
                 image_points += image_point_set.points
 
             length_reference_points = int(len(image_points) / 4)
-            half_width: float = self._reference_target.marker_size / 2.0
+            # TODO: DONT hard code
+            half_width: float = 10 / 2.0
             single_reference_points: numpy.ndarray = numpy.array([
                 [-half_width, half_width, 0.0],
                 [half_width, half_width, 0.0],
