@@ -1,6 +1,6 @@
+import math
+
 from src.board_builder.structures.pose_location import PoseLocation
-from src.pose_solver.exceptions import \
-    PoseSolverException
 from src.common.structures import \
     IntrinsicParameters, \
     Matrix4x4, \
@@ -187,7 +187,41 @@ class BoardBuilderPoseSolver:
         self._now_timestamp = None
 
         self._board_marker_ids = []
-        self._marker_size = 0
+        self._board_marker_size = 10
+
+        """
+        self.board_marker_positions = [
+            [30.0, 10.0, 0.0], [70.0, 10.0, 0.0], [110.0, 10.0, 0.0], [150.0, 10.0, 0.0],
+            [10.0, 30.0, 0.0], [50.0, 30.0, 0.0], [90.0, 30.0, 0.0], [130.0, 30.0, 0.0], 
+            [30.0, 50.0, 0.0], [70.0, 50.0, 0.0], [110.0, 50.0, 0.0], [150.0, 50.0, 0.0],
+            [10.0, 70.0, 0.0], [50.0, 70.0, 0.0], [90.0, 70.0, 0.0], [130.0, 70.0, 0.0], 
+            [30.0, 90.0, 0.0], [70.0, 90.0, 0.0], [110.0, 90.0, 0.0], [150.0, 90.0, 0.0],
+            [10.0, 110.0, 0.0], [50.0, 110.0, 0.0], [90.0, 110.0, 0.0], [130.0, 110.0, 0.0], 
+            [30.0, 130.0, 0.0], [70.0, 130.0, 0.0], [110.0, 130.0, 0.0], [150.0, 130.0, 0.0],
+            [10.0, 150.0, 0.0], [50.0, 150.0, 0.0], [90.0, 150.0, 0.0], [130.0, 150.0, 0.0], 
+            [30.0, 170.0, 0.0], [70.0, 170.0, 0.0], [110.0, 170.0, 0.0], [150.0, 170.0, 0.0],
+            [10.0, 190.0, 0.0], [50.0, 190.0, 0.0], [90.0, 190.0, 0.0], [130.0, 190.0, 0.0], 
+        ]
+        """
+        self._board_marker_ids = [
+            0,  1,  2,  3,
+            4,  5,  6,  7,
+            8,  9, 10, 11,
+            12, 13, 13, 15,
+            16, 17, 18, 19,
+            20, 21, 22, 23,
+            24, 25, 26, 27,
+            28, 29, 30, 31,
+            32, 33, 34, 35,
+            36, 37, 38, 39
+        ]
+        self._board_marker_positions = []
+        for marker_id in self._board_marker_ids:
+            x_coords = [30.0, 70.0, 110.0, 150.0, 10.0, 50.0, 90.0, 130.0]
+            x = x_coords[marker_id % 8]
+            y = 10.0 + (marker_id // 4) * 20.0
+            z = 0.0
+            self._board_marker_positions.append([x, y, z])
 
     def add_marker_corners(
         self,
@@ -245,10 +279,11 @@ class BoardBuilderPoseSolver:
         self._poses_average_by_detector_label = detector_poses_by_label
 
     def set_board_marker_ids(self, board_marker_ids):
-        self._board_marker_ids = board_marker_ids
+        #self._board_marker_ids = board_marker_ids
+        pass
 
-    def set_marker_size(self, marker_size):
-        self._marker_size = marker_size
+    def set_board_marker_size(self, board_marker_size):
+        self._board_marker_size = board_marker_size
 
     def _calculate_marker_ray_set(
         self,
@@ -426,22 +461,36 @@ class BoardBuilderPoseSolver:
                 if image_point_set.marker_id in self._board_marker_ids
             ]
 
+            # Create a dictionary to map marker_id to its index in _board_marker_ids
+            marker_id_to_index = {marker_id: index for index, marker_id in enumerate(self._board_marker_ids)}
+
+            # Sort the board_image_point_sets based on the order in _board_marker_ids
+            board_image_point_sets.sort(key=lambda x: marker_id_to_index[x.marker_id])
+
             intrinsics: IntrinsicParameters = self._intrinsics_by_detector_label[detector_label]
 
             image_points = []
+            detected_marker_positions = []
             for image_point_set in board_image_point_sets:
                 image_points += image_point_set.points
+                detected_marker_positions.append(
+                    self._board_marker_positions[marker_id_to_index[image_point_set.marker_id]])
 
-            length_reference_points = int(len(image_points) / 4)
-            half_width: float = self._marker_size / 2.0
-            single_reference_points: numpy.ndarray = numpy.array([
-                [-half_width, half_width, 0.0],
-                [half_width, half_width, 0.0],
-                [half_width, -half_width, 0.0],
-                [-half_width, -half_width, 0.0]],
-                dtype="float32")
-            reference_points = numpy.tile(single_reference_points, (length_reference_points, 1))
+            if len(detected_marker_positions) == 0:
+                continue  # Skip if no markers are detected
 
+            half_width: float = 10 / 2.0
+            reference_points = []
+            for position in detected_marker_positions:
+                single_reference_points = numpy.array([
+                    [position[0] + half_width, position[1] - half_width, 0.0],
+                    [position[0] + half_width, position[1] + half_width, 0.0],
+                    [position[0] - half_width, position[1] + half_width, 0.0],
+                    [position[0] - half_width, position[1] - half_width, 0.0],
+                ])
+                reference_points.extend(single_reference_points)
+
+            reference_points = numpy.array(reference_points, dtype="float32")
             reference_points = numpy.reshape(reference_points, newshape=(1, len(reference_points), 3))
             image_points = numpy.reshape(numpy.array(image_points, dtype="float32"), newshape=(1, len(image_points), 2))
 
@@ -463,7 +512,6 @@ class BoardBuilderPoseSolver:
             reference_to_camera_matrix[0:3, 3] = translation_vector
             reference_to_detector_matrix = transformation_image_to_opengl(reference_to_camera_matrix)
             detector_to_reference_opengl = numpy.linalg.inv(reference_to_detector_matrix)
-            print(Matrix4x4.from_numpy_array(detector_to_reference_opengl))
             self._poses_by_detector_label[detector_label] = Matrix4x4.from_numpy_array(detector_to_reference_opengl)
 
     def _estimate_target_pose_relative_to_reference(self):

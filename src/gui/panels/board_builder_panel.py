@@ -85,7 +85,7 @@ class BoardBuilderPanel(BasePanel):
         self._building_board = False
 
         self.board_builder = BoardBuilder(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
-        self.marker_size = 0
+        self._marker_size = 0
         self.marker_color = [
             (0, 0, 255),  # Red
             (0, 255, 0),  # Green
@@ -233,7 +233,7 @@ class BoardBuilderPanel(BasePanel):
         self._collecting_data = False
         self._building_board = False
         self.board_builder = BoardBuilder(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
-        self.board_builder.pose_solver.set_marker_size(self._marker_size)
+        self.board_builder.pose_solver.set_board_marker_size(self._marker_size)
 
     def update_loop(self) -> None:
         super().update_loop()
@@ -277,7 +277,7 @@ class BoardBuilderPanel(BasePanel):
     ### MAIN BUTTONS ###
     def on_confirm_marker_size_pressed(self, _event: wx.CommandEvent) -> None:
         self._marker_size = self._tracked_marker_diameter_spinbox.spinbox.GetValue()
-        self.board_builder.pose_solver.set_marker_size(self._marker_size)
+        self.board_builder.pose_solver.set_board_marker_size(self._marker_size)
         self._open_camera_button.Enable(True)
         self._close_camera_button.Enable(True)
 
