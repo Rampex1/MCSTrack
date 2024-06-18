@@ -1,5 +1,6 @@
 {
   "serial_identifier": "example_detector",
+  "camera_implementation": "picamera",
   "camera_connection": {
     "usb_id": 1
   },

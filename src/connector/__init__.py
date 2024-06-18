@@ -1,2 +1,5 @@
 from .connector import Connector
-from .structures import ConnectionTableRow
+from .structures import \
+    ComponentConnectionStatic, \
+    ComponentConnectionDynamic, \
+    ConnectionTableRow

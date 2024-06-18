@@ -106,6 +106,7 @@ class BasePanel(wx.Panel):
         """
         Overload for anything that should be updated approximately once per GUI frame
         """
+        self._connector.update_loop()
         if not self.panel_is_selected:
             self._update_loop_running = False
             return

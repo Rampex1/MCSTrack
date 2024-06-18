@@ -17,6 +17,11 @@ from src.detector.api import \
     SetDetectionParametersRequest
 from src.calibrator import Calibrator
 from src.calibrator.fileio import CalibratorConfiguration
+from src.detector.fileio.detector_configuration import OPENCV, PICAMERA
+from src.detector.implementations import \
+    AbstractCameraInterface, \
+    AbstractMarkerInterface, \
+    ArucoMarker
 import base64
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,8 +30,6 @@ from fastapi_utils.tasks import repeat_every
 import hjson
 import logging
 import os
-
-from src.detector.implementations import AbstractMarkerInterface, ArucoMarker
 
 
 logger = logging.getLogger(__name__)
@@ -38,7 +41,7 @@ def create_app() -> FastAPI:
     calibrator_configuration_filepath: str = os.path.join(os.path.dirname(__file__), "..", "..", "data",
                                                           "calibrator_config.json")
     calibrator_configuration: CalibratorConfiguration
-    #camera_interface: AbstractCameraInterface
+    camera_interface: AbstractCameraInterface
     marker_interface: AbstractMarkerInterface
 
     with open(detector_configuration_filepath, 'r') as infile:
@@ -51,10 +54,21 @@ def create_app() -> FastAPI:
         calibrator_configuration_dict = hjson.loads(calibrator_configuration_file_contents)
         calibrator_configuration = CalibratorConfiguration(**calibrator_configuration_dict)
 
-    #camera_interface = Detector.USBWebcamWithOpenCV()
+    if detector_configuration.camera_implementation == OPENCV:
+        from src.detector.implementations.usb_webcam_implementation import USBWebcamWithOpenCV
+        camera_interface = USBWebcamWithOpenCV(detector_configuration.camera_connection.usb_id)
+    elif detector_configuration.camera_implementation == PICAMERA:
+        from src.detector.implementations.picamera2_implementation import PiCamera
+        camera_interface = PiCamera()
+    else:
+        raise RuntimeError(f"Unsupported AbstractCameraInterface {detector_configuration.camera_implementation}")
     marker_interface = ArucoMarker()
     
-    detector = Detector(detector_configuration=detector_configuration,marker_interface=marker_interface, calibrator_configuration=calibrator_configuration)
+    detector = Detector(
+        detector_configuration=detector_configuration,
+        marker_interface=marker_interface, 
+        calibrator_configuration=calibrator_configuration,
+        camera_interface=camera_interface)
     detector_app = FastAPI()
 
     # CORS Middleware

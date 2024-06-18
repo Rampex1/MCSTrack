@@ -4,7 +4,7 @@ import uvicorn
 
 def main():
     uvicorn.run(
-        "pose_solver.pose_solver_app:app",
+        "src.pose_solver.pose_solver_app:app",
         reload=False,
         port=8000,
         log_level=logging.INFO)

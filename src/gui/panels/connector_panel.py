@@ -12,9 +12,9 @@ from src.common import \
 from src.common.structures import \
     COMPONENT_ROLE_LABEL_DETECTOR, \
     COMPONENT_ROLE_LABEL_POSE_SOLVER, \
-    ComponentConnectionStatic, \
     StatusMessage
 from src.connector import \
+    ComponentConnectionStatic, \
     Connector, \
     ConnectionTableRow
 from ipaddress import IPv4Address

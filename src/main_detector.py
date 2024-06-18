@@ -1,10 +1,11 @@
+from src.detector.detector_app import app
 import logging
 import uvicorn
 
 
 def main():
     uvicorn.run(
-        "detector.detector_app:app",
+        app,
         reload=False,
         port=8001,
         log_level=logging.INFO)

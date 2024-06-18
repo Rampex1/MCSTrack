@@ -1,6 +1,5 @@
 from .capture_format import CaptureFormat
 from .capture_status import CaptureStatus
-from .component_connection_static import ComponentConnectionStatic
 from .component_role_label import \
     ComponentRoleLabel, \
     COMPONENT_ROLE_LABEL_DETECTOR, \
@@ -13,6 +12,7 @@ from .corner_refinement import \
     CORNER_REFINEMENT_METHOD_APRILTAG, \
     CORNER_REFINEMENT_METHOD_DICTIONARY_INT_TO_TEXT, \
     CORNER_REFINEMENT_METHOD_DICTIONARY_TEXT_TO_INT
+from .detector_frame import DetectorFrame
 from .detection_parameters import DetectionParameters
 from .detector_resolution import DetectorResolution
 from .image_resolution import ImageResolution
@@ -26,6 +26,7 @@ from .marker_snapshot import MarkerSnapshot
 from .marker_status import MarkerStatus
 from .matrix4x4 import Matrix4x4
 from .pose import Pose
+from .pose_solver_frame import PoseSolverFrame
 from .pose_solver_status import PoseSolverStatus
 from .board_builder_status import BoardBuilderStatus
 from .status_message import \

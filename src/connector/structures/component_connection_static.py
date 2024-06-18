@@ -1,4 +1,4 @@
-from .component_role_label import ComponentRoleLabel
+from src.common.structures.component_role_label import ComponentRoleLabel
 from ipaddress import IPv4Address
 from pydantic import BaseModel, Field
 

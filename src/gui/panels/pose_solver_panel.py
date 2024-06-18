@@ -8,49 +8,27 @@ from .specialized import \
     GraphicsRenderer, \
     TrackingTable, \
     TrackingTableRow
-from src.calibrator.api import \
-    GetCalibrationResultRequest, \
-    GetCalibrationResultResponse, \
-    ListCalibrationDetectorResolutionsRequest, \
-    ListCalibrationDetectorResolutionsResponse, \
-    ListCalibrationResultMetadataRequest, \
-    ListCalibrationResultMetadataResponse
 from src.common import \
     ErrorResponse, \
     EmptyResponse, \
-    MCastRequest, \
     MCastRequestSeries, \
     MCastResponse, \
     MCastResponseSeries, \
     StatusMessageSource
 from src.common.structures import \
-    DetectorResolution, \
-    ImageResolution, \
-    IntrinsicParameters, \
-    MarkerSnapshot, \
+    DetectorFrame, \
     Matrix4x4, \
-    Pose
+    Pose, \
+    PoseSolverFrame
 from src.connector import \
     Connector
-from src.detector.api import \
-    GetCapturePropertiesRequest, \
-    GetCapturePropertiesResponse, \
-    GetMarkerSnapshotsRequest, \
-    GetMarkerSnapshotsResponse, \
-    StartCaptureRequest, \
-    StopCaptureRequest
 from src.pose_solver.api import \
     AddTargetMarkerRequest, \
     AddTargetMarkerResponse, \
-    AddMarkerCornersRequest, \
-    GetPosesRequest, \
-    GetPosesResponse, \
-    SetIntrinsicParametersRequest, \
-    SetReferenceMarkerRequest, \
-    StartPoseSolverRequest, \
-    StopPoseSolverRequest
+    SetReferenceMarkerRequest
 import datetime
 import logging
+import platform
 from typing import Final, Optional
 import uuid
 import wx
@@ -59,39 +37,12 @@ import wx.grid
 
 logger = logging.getLogger(__name__)
 
-
-# Active means that something is happening that should prevent the user from interacting with the UI
-ACTIVE_PHASE_IDLE: Final[int] = 0
-ACTIVE_PHASE_STARTING_CAPTURE: Final[int] = 1
-ACTIVE_PHASE_STARTING_GET_RESOLUTIONS: Final[int] = 2
-ACTIVE_PHASE_STARTING_LIST_INTRINSICS: Final[int] = 3  # This and next phase to be combined with modified API
-ACTIVE_PHASE_STARTING_GET_INTRINSICS: Final[int] = 4
-ACTIVE_PHASE_STARTING_FINAL: Final[int] = 5
-ACTIVE_PHASE_STOPPING: Final[int] = 6
-
 POSE_REPRESENTATIVE_MODEL: Final[str] = "coordinate_axes"
 
 
-# TODO: There is a lot of general logic that probably best be moved to the Connector class,
-#       thereby allowing the pose solving functionality to be used without the UI.
 class PoseSolverPanel(BasePanel):
 
     _connector: Connector
-
-    _active_request_ids: list[uuid.UUID]
-
-    class PassiveDetectorRequest:
-        request_id: uuid.UUID | None
-        detected_marker_snapshots: list[MarkerSnapshot]
-        rejected_marker_snapshots: list[MarkerSnapshot]
-        marker_snapshot_timestamp: datetime.datetime
-        def __init__(self):
-            self.request_id = None
-            self.detected_marker_snapshots = list()
-            self.rejected_marker_snapshots = list()
-            self.marker_snapshot_timestamp = datetime.datetime.min
-    _passive_detecting_requests: dict[str, PassiveDetectorRequest]  # access by detector_label
-    _passive_solving_request_id: uuid.UUID | None
 
     _pose_solver_selector: ParameterSelector
     _reference_marker_id_spinbox: ParameterSpinboxInteger
@@ -104,17 +55,13 @@ class PoseSolverPanel(BasePanel):
     _tracking_stop_button: wx.Button
     _tracking_table: TrackingTable
 
-    _is_solving: bool
+    _active_request_ids: list[uuid.UUID]
     _is_updating: bool
-    _current_phase: int
+    _is_waiting_for_connector: bool
+    _latest_detector_frames: dict[str, DetectorFrame]  # last frame for each detector
+    _latest_pose_solver_frames: dict[str, PoseSolverFrame]
     _target_id_to_label: dict[str, str]
     _tracked_target_poses: list[Pose]
-
-    # Variables assigned upon starting the pose solver
-    _detector_calibration_labels: dict[str, str]
-    _detector_resolutions: dict[str, ImageResolution]
-    _calibrated_resolutions: list[DetectorResolution]
-    _detector_intrinsics: dict[str, IntrinsicParameters]
 
     def __init__(
         self,
@@ -131,19 +78,12 @@ class PoseSolverPanel(BasePanel):
         self._connector = connector
 
         self._active_request_ids = list()
-        self._passive_detecting_requests = dict()
-        self._passive_solving_request_id = None
-
-        self._is_solving = False
         self._is_updating = False
-        self._current_phase = ACTIVE_PHASE_IDLE
-        self._tracked_target_poses = list()
+        self._is_waiting_for_connector = False
+        self._latest_detector_frames = dict()
+        self._latest_pose_solver_frames = dict()
         self._target_id_to_label = dict()
-
-        self._detector_resolutions = dict()
-        self._calibrated_resolutions = list()
-        self._detector_calibration_labels = dict()
-        self._detector_intrinsics = dict()
+        self._tracked_target_poses = list()
 
         horizontal_split_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.HORIZONTAL)
 
@@ -263,12 +203,16 @@ class PoseSolverPanel(BasePanel):
             window=control_border_panel,
             flags=wx.SizerFlags(35).Expand())
 
-        self._renderer = GraphicsRenderer(parent=self)
-        #self._renderer.load_models_into_context_from_data_path()
-        #self._renderer.add_scene_object("coordinate_axes", Matrix4x4())
-        horizontal_split_sizer.Add(
-            window=self._renderer,
-            flags=wx.SizerFlags(65).Expand())
+        if platform.system() == "Linux":
+            logger.warning("OpenGL context creation does not currently work well in Linux. Rendering is disabled.")
+            self._renderer = None
+        else:
+            self._renderer = GraphicsRenderer(parent=self)
+            horizontal_split_sizer.Add(
+                window=self._renderer,
+                flags=wx.SizerFlags(65).Expand())
+            self._renderer.load_models_into_context_from_data_path()
+            self._renderer.add_scene_object("coordinate_axes", Matrix4x4())
 
         self.SetSizerAndFit(sizer=horizontal_split_sizer)
 
@@ -297,104 +241,6 @@ class PoseSolverPanel(BasePanel):
     ):
         super().handle_error_response(response=response)
 
-    def handle_response_get_calibration_result(
-        self,
-        response: GetCalibrationResultResponse
-    ) -> None:
-        self._detector_intrinsics[response.intrinsic_calibration.detector_serial_identifier] = \
-            response.intrinsic_calibration.calibrated_values
-
-    def handle_response_get_capture_properties(
-        self,
-        response: GetCapturePropertiesResponse,
-        detector_label: str
-    ) -> None:
-        self._detector_resolutions[detector_label] = ImageResolution(
-            x_px=response.resolution_x_px,
-            y_px=response.resolution_y_px)
-
-    def handle_response_get_marker_snapshots(
-        self,
-        response: GetMarkerSnapshotsResponse,
-        detector_label: str
-    ):
-        if detector_label in self._passive_detecting_requests.keys():
-            self._passive_detecting_requests[detector_label].detected_marker_snapshots = \
-                response.detected_marker_snapshots
-            self._passive_detecting_requests[detector_label].rejected_marker_snapshots = \
-                response.rejected_marker_snapshots
-            self._passive_detecting_requests[detector_label].marker_snapshot_timestamp = \
-                datetime.datetime.utcnow()  # TODO: This should come from the detector
-
-    def handle_response_get_poses(
-        self,
-        response: GetPosesResponse
-    ) -> None:
-        if not self._is_solving:
-            return
-        self._tracked_target_poses.clear()
-        self._renderer.clear_scene_objects()
-        self._renderer.add_scene_object(  # Reference
-            model_key=POSE_REPRESENTATIVE_MODEL,
-            transform_to_world=Matrix4x4())
-        table_rows: list[TrackingTableRow] = list()
-        for pose in response.target_poses:
-            label: str = str()
-            if pose.target_id in self._target_id_to_label:
-                label = self._target_id_to_label[pose.target_id]
-            table_row: TrackingTableRow = TrackingTableRow(
-                target_id=pose.target_id,
-                label=label,
-                x=pose.object_to_reference_matrix[0, 3],
-                y=pose.object_to_reference_matrix[1, 3],
-                z=pose.object_to_reference_matrix[2, 3])
-            table_rows.append(table_row)
-            self._tracked_target_poses.append(pose)
-            self._renderer.add_scene_object(
-                model_key=POSE_REPRESENTATIVE_MODEL,
-                transform_to_world=pose.object_to_reference_matrix)
-        for pose in response.detector_poses:
-            table_row: TrackingTableRow = TrackingTableRow(
-                target_id=pose.target_id,
-                label=pose.target_id,
-                x=pose.object_to_reference_matrix[0, 3],
-                y=pose.object_to_reference_matrix[1, 3],
-                z=pose.object_to_reference_matrix[2, 3])
-            table_rows.append(table_row)
-            self._tracked_target_poses.append(pose)
-            self._renderer.add_scene_object(
-                model_key=POSE_REPRESENTATIVE_MODEL,
-                transform_to_world=pose.object_to_reference_matrix)
-        self._tracking_table.update_contents(row_contents=table_rows)
-        if len(table_rows) > 0:
-            self._tracking_table.Enable(True)
-        else:
-            self._tracking_table.Enable(False)
-
-    def handle_response_list_calibration_detector_resolutions(
-        self,
-        response: ListCalibrationDetectorResolutionsResponse
-    ) -> None:
-        self._calibrated_resolutions = response.detector_resolutions
-
-    def handle_response_list_calibration_result_metadata(
-        self,
-        response: ListCalibrationResultMetadataResponse,
-        detector_label: str
-    ) -> None:
-        if len(response.metadata_list) <= 0:
-            self.status_message_source.enqueue_status_message(
-                severity="error",
-                message=f"No calibration was available for detector {detector_label}. No intrinsics will be set.")
-            return
-        newest_result_id: str = response.metadata_list[0].identifier  # placeholder, maybe
-        newest_timestamp: datetime.datetime = datetime.datetime.min
-        for result_metadata in response.metadata_list:
-            timestamp: datetime.datetime = datetime.datetime.fromisoformat(result_metadata.timestamp_utc)
-            if timestamp > newest_timestamp:
-                newest_result_id = result_metadata.identifier
-        self._detector_calibration_labels[detector_label] = newest_result_id
-
     def handle_response_series(
         self,
         response_series: MCastResponseSeries,
@@ -413,29 +259,6 @@ class PoseSolverPanel(BasePanel):
         for response in response_series.series:
             if isinstance(response, AddTargetMarkerResponse):
                 success = True  # we don't currently do anything with this response in this interface
-            elif isinstance(response, GetCalibrationResultResponse):
-                self.handle_response_get_calibration_result(response=response)
-                success = True
-            elif isinstance(response, GetCapturePropertiesResponse):
-                self.handle_response_get_capture_properties(
-                    response=response,
-                    detector_label=response_series.responder)
-                success = True
-            elif isinstance(response, GetMarkerSnapshotsResponse):
-                self.handle_response_get_marker_snapshots(
-                    response=response,
-                    detector_label=response_series.responder)
-            elif isinstance(response, GetPosesResponse):
-                self.handle_response_get_poses(response=response)
-                success = True
-            elif isinstance(response, ListCalibrationDetectorResolutionsResponse):
-                self.handle_response_list_calibration_detector_resolutions(response=response)
-                success = True
-            elif isinstance(response, ListCalibrationResultMetadataResponse):
-                self.handle_response_list_calibration_result_metadata(
-                    response=response,
-                    detector_label=response_series.responder)
-                success = True
             elif isinstance(response, ErrorResponse):
                 self.handle_error_response(response=response)
                 success = False
@@ -443,93 +266,6 @@ class PoseSolverPanel(BasePanel):
                 self.handle_unknown_response(response=response)
                 success = False
         return success
-
-    def on_active_request_ids_processed(self) -> None:
-        if self._current_phase == ACTIVE_PHASE_STARTING_CAPTURE:
-            self.status_message_source.enqueue_status_message(
-                severity="debug",
-                message="ACTIVE_PHASE_STARTING_CAPTURE complete")
-            calibrator_labels: list[str] = self._connector.get_connected_detector_labels()
-            request_series: MCastRequestSeries = MCastRequestSeries(
-                series=[ListCalibrationDetectorResolutionsRequest()])
-            self._active_request_ids.append(self._connector.request_series_push(
-                connection_label=calibrator_labels[0],
-                request_series=request_series))
-            detector_labels: list[str] = self._connector.get_connected_detector_labels()
-            for detector_label in detector_labels:
-                request_series: MCastRequestSeries = MCastRequestSeries(
-                    series=[GetCapturePropertiesRequest()])
-                self._active_request_ids.append(self._connector.request_series_push(
-                    connection_label=detector_label,
-                    request_series=request_series))
-            self._current_phase = ACTIVE_PHASE_STARTING_GET_RESOLUTIONS
-        elif self._current_phase == ACTIVE_PHASE_STARTING_GET_RESOLUTIONS:
-            self.status_message_source.enqueue_status_message(
-                severity="debug",
-                message="ACTIVE_PHASE_STARTING_GET_RESOLUTIONS complete")
-            requests: list[MCastRequest] = list()
-            for detector_label, image_resolution in self._detector_resolutions.items():
-                detector_resolution: DetectorResolution = DetectorResolution(
-                    detector_serial_identifier=detector_label,
-                    image_resolution=image_resolution)
-                if detector_resolution in self._calibrated_resolutions:
-                    requests.append(
-                        ListCalibrationResultMetadataRequest(
-                            detector_serial_identifier=detector_resolution.detector_serial_identifier,
-                            image_resolution=image_resolution))
-                else:
-                    self.status_message_source.enqueue_status_message(
-                        severity="error",
-                        message=f"No calibration available for detector {detector_label} "
-                                f"at resolution {str(image_resolution)}. No intrinsics will be set.")
-            calibrator_labels: list[str] = self._connector.get_connected_detector_labels()
-            request_series: MCastRequestSeries = MCastRequestSeries(series=requests)
-            self._active_request_ids.append(self._connector.request_series_push(
-                connection_label=calibrator_labels[0],
-                request_series=request_series))
-            self._current_phase = ACTIVE_PHASE_STARTING_LIST_INTRINSICS
-        elif self._current_phase == ACTIVE_PHASE_STARTING_LIST_INTRINSICS:
-            self.status_message_source.enqueue_status_message(
-                severity="debug",
-                message="ACTIVE_PHASE_STARTING_LIST_INTRINSICS complete")
-            requests: list[MCastRequest] = list()
-            for detector_label, result_identifier in self._detector_calibration_labels.items():
-                requests.append(GetCalibrationResultRequest(result_identifier=result_identifier))
-            calibrator_labels: list[str] = self._connector.get_connected_detector_labels()
-            request_series: MCastRequestSeries = MCastRequestSeries(series=requests)
-            self._active_request_ids.append(self._connector.request_series_push(
-                connection_label=calibrator_labels[0],
-                request_series=request_series))
-            self._current_phase = ACTIVE_PHASE_STARTING_GET_INTRINSICS
-        elif self._current_phase == ACTIVE_PHASE_STARTING_GET_INTRINSICS:
-            self.status_message_source.enqueue_status_message(
-                severity="debug",
-                message="ACTIVE_PHASE_STARTING_GET_INTRINSICS complete")
-            requests: list[MCastRequest] = list()
-            for detector_label, intrinsic_parameters in self._detector_intrinsics.items():
-                requests.append(SetIntrinsicParametersRequest(
-                    detector_label=detector_label,
-                    intrinsic_parameters=intrinsic_parameters))
-            requests.append(StartPoseSolverRequest())
-            request_series: MCastRequestSeries = MCastRequestSeries(series=requests)
-            self._active_request_ids.append(self._connector.request_series_push(
-                connection_label=self._pose_solver_selector.selector.GetStringSelection(),
-                request_series=request_series))
-            self._current_phase = ACTIVE_PHASE_STARTING_FINAL
-        elif self._current_phase == ACTIVE_PHASE_STARTING_FINAL:
-            self.status_message_source.enqueue_status_message(
-                severity="debug",
-                message="ACTIVE_PHASE_STARTING_FINAL complete")
-            for detector_label in self._detector_intrinsics.keys():
-                self._passive_detecting_requests[detector_label] = PoseSolverPanel.PassiveDetectorRequest()
-            self._is_solving = True
-            self._current_phase = ACTIVE_PHASE_IDLE
-        elif self._current_phase == ACTIVE_PHASE_STOPPING:
-            self._tracking_table.update_contents(list())
-            self._tracking_table.Enable(False)
-            self._tracking_display_textbox.SetValue(str())
-            self._tracking_display_textbox.Enable(False)
-            self._current_phase = ACTIVE_PHASE_IDLE
 
     def on_page_select(self) -> None:
         super().on_page_select()
@@ -583,108 +319,106 @@ class PoseSolverPanel(BasePanel):
         self._update_controls()
 
     def on_tracking_start_pressed(self, _event: wx.CommandEvent) -> None:
-        calibrator_labels: list[str] = self._connector.get_connected_detector_labels()
-        if len(calibrator_labels) > 1:
-            self.status_message_source.enqueue_status_message(
-                severity="warning",
-                message="Multiple calibrators are connected. "
-                        "The first is being arbitrarily chosen for getting intrinsic parameters.")
-        elif len(calibrator_labels) <= 0:
-            self.status_message_source.enqueue_status_message(
-                severity="error",
-                message="No calibrators were found. Aborting tracking.")
-            return
-        self._detector_resolutions.clear()
-        self._calibrated_resolutions.clear()
-        self._detector_calibration_labels.clear()
-        self._detector_intrinsics.clear()
-        request_series: MCastRequestSeries = MCastRequestSeries(
-            series=[ListCalibrationDetectorResolutionsRequest()])
-        self._active_request_ids.append(self._connector.request_series_push(
-            connection_label=calibrator_labels[0],
-            request_series=request_series))
-        detector_labels: list[str] = self._connector.get_connected_detector_labels()
-        for detector_label in detector_labels:
-            request_series: MCastRequestSeries = MCastRequestSeries(
-                series=[StartCaptureRequest()])
-            self._active_request_ids.append(self._connector.request_series_push(
-                connection_label=detector_label,
-                request_series=request_series))
-        self._current_phase = ACTIVE_PHASE_STARTING_CAPTURE
+        self._connector.start_tracking(mode=Connector.StartupMode.DETECTING_AND_SOLVING)
+        self._is_waiting_for_connector = True
         self._update_controls()
 
     def on_tracking_stop_pressed(self, _event: wx.CommandEvent) -> None:
-        detector_labels: list[str] = self._connector.get_connected_detector_labels()
-        for detector_label in detector_labels:
-            request_series: MCastRequestSeries = MCastRequestSeries(
-                series=[StopCaptureRequest()])
-            self._active_request_ids.append(self._connector.request_series_push(
-                connection_label=detector_label,
-                request_series=request_series))
-        request_series: MCastRequestSeries = MCastRequestSeries(series=[StopPoseSolverRequest()])
-        selected_pose_solver_label: str = self._pose_solver_selector.selector.GetStringSelection()
-        self._active_request_ids.append(self._connector.request_series_push(
-            connection_label=selected_pose_solver_label,
-            request_series=request_series))
-
-        # Finish up any running passive tasks before we allow controls again
-        for detecting_request in self._passive_detecting_requests.values():
-            if detecting_request.request_id is not None:
-                self._active_request_ids.append(detecting_request.request_id)
-        self._passive_detecting_requests.clear()
-        if self._passive_solving_request_id is not None:
-            self._active_request_ids.append(self._passive_solving_request_id)
-        self._passive_solving_request_id = None
-
-        self._is_solving = False
+        self._tracking_table.update_contents(list())
+        self._tracking_table.Enable(False)
+        self._tracking_display_textbox.SetValue(str())
+        self._tracking_display_textbox.Enable(False)
+        self._connector.stop_tracking()
+        self._is_waiting_for_connector = True
         self._update_controls()
-        self._current_phase = ACTIVE_PHASE_STOPPING
 
     def update_loop(self) -> None:
         super().update_loop()
 
-        self._renderer.render()
+        if self._renderer is not None:
+            self._renderer.render()
 
         self._is_updating = True
 
         ui_needs_update: bool = False
+        if self._is_waiting_for_connector:
+            if not self._connector.is_in_transition():
+                ui_needs_update = True
+                self._is_waiting_for_connector = False
 
-        if self._is_solving:
-            for detector_label, request_state in self._passive_detecting_requests.items():
-                if request_state.request_id is not None:
-                    _, request_state.request_id = self.update_request(request_id=request_state.request_id)
-                if request_state.request_id is None:
-                    if len(request_state.detected_marker_snapshots) > 0 or \
-                       len(request_state.rejected_marker_snapshots) > 0:
-                        detector_timestamp: str = request_state.marker_snapshot_timestamp.isoformat()
-                        marker_request: AddMarkerCornersRequest = AddMarkerCornersRequest(
-                            detected_marker_snapshots=request_state.detected_marker_snapshots,
-                            rejected_marker_snapshots=request_state.rejected_marker_snapshots,
-                            detector_label=detector_label,
-                            detector_timestamp_utc_iso8601=detector_timestamp)
-                        request_series: MCastRequestSeries = MCastRequestSeries(series=[marker_request])
-                        selected_pose_solver_label: str = self._pose_solver_selector.selector.GetStringSelection()
-                        request_state.request_id = self._connector.request_series_push(
-                            connection_label=selected_pose_solver_label,
-                            request_series=request_series)
-                        request_state.detected_marker_snapshots.clear()
-                        request_state.rejected_marker_snapshots.clear()
-                    else:
-                        request_series: MCastRequestSeries = MCastRequestSeries(series=[GetMarkerSnapshotsRequest()])
-                        request_state.request_id = self._connector.request_series_push(
-                            connection_label=detector_label,
-                            request_series=request_series)
-            if self._passive_solving_request_id is not None:
-                _, self._passive_solving_request_id = \
-                    self.update_request(request_id=self._passive_solving_request_id)
-            if self._passive_solving_request_id is None:
-                request_series: MCastRequestSeries = MCastRequestSeries(series=[GetPosesRequest()])
-                selected_pose_solver_label: str = self._pose_solver_selector.selector.GetStringSelection()
-                self._passive_solving_request_id = self._connector.request_series_push(
-                    connection_label=selected_pose_solver_label,
-                    request_series=request_series)
+        if self._connector.is_running():
+            detector_labels: list[str] = self._connector.get_connected_detector_labels()
+            for detector_label in detector_labels:
+                retrieved_detector_frame: DetectorFrame = self._connector.get_live_detector_frame(
+                    detector_label=detector_label)
+                retrieved_detector_frame_timestamp: datetime.datetime = retrieved_detector_frame.timestamp_utc()
+                if detector_label in self._latest_detector_frames:
+                    latest_detector_frame: DetectorFrame = self._latest_detector_frames[detector_label]
+                    latest_detector_frame_timestamp: datetime.datetime = latest_detector_frame.timestamp_utc()
+                    if retrieved_detector_frame_timestamp > latest_detector_frame_timestamp:
+                        self._latest_detector_frames[detector_label] = retrieved_detector_frame
+                else:
+                    self._latest_detector_frames[detector_label] = retrieved_detector_frame
 
-        # TODO: I think this can be moved to BasePanel class
+            new_poses_available: bool = False
+            pose_solver_labels: list[str] = self._connector.get_connected_pose_solver_labels()
+            for pose_solver_label in pose_solver_labels:
+                retrieved_pose_solver_frame: PoseSolverFrame = self._connector.get_live_pose_solver_frame(
+                    pose_solver_label=pose_solver_label)
+                retrieved_pose_solver_frame_timestamp: datetime.datetime = retrieved_pose_solver_frame.timestamp_utc()
+                if pose_solver_label in self._latest_pose_solver_frames:
+                    latest_pose_solver_frame: PoseSolverFrame = self._latest_pose_solver_frames[pose_solver_label]
+                    latest_pose_solver_frame_timestamp: datetime.datetime = latest_pose_solver_frame.timestamp_utc()
+                    if retrieved_pose_solver_frame_timestamp > latest_pose_solver_frame_timestamp:
+                        self._latest_pose_solver_frames[pose_solver_label] = retrieved_pose_solver_frame
+                        new_poses_available = True
+                else:
+                    self._latest_pose_solver_frames[pose_solver_label] = retrieved_pose_solver_frame
+                    new_poses_available = True
+            if new_poses_available:
+                self._tracked_target_poses.clear()
+                if self._renderer is not None:
+                    self._renderer.clear_scene_objects()
+                    self._renderer.add_scene_object(  # Reference
+                        model_key=POSE_REPRESENTATIVE_MODEL,
+                        transform_to_world=Matrix4x4())
+                table_rows: list[TrackingTableRow] = list()
+                for live_pose_solver in self._latest_pose_solver_frames.values():
+                    for pose in live_pose_solver.target_poses:
+                        label: str = str()
+                        if pose.target_id in self._target_id_to_label:
+                            label = self._target_id_to_label[pose.target_id]
+                        table_row: TrackingTableRow = TrackingTableRow(
+                            target_id=pose.target_id,
+                            label=label,
+                            x=pose.object_to_reference_matrix[0, 3],
+                            y=pose.object_to_reference_matrix[1, 3],
+                            z=pose.object_to_reference_matrix[2, 3])
+                        table_rows.append(table_row)
+                        self._tracked_target_poses.append(pose)
+                        if self._renderer is not None:
+                            self._renderer.add_scene_object(
+                                model_key=POSE_REPRESENTATIVE_MODEL,
+                                transform_to_world=pose.object_to_reference_matrix)
+                    for pose in live_pose_solver.detector_poses:
+                        table_row: TrackingTableRow = TrackingTableRow(
+                            target_id=pose.target_id,
+                            label=pose.target_id,
+                            x=pose.object_to_reference_matrix[0, 3],
+                            y=pose.object_to_reference_matrix[1, 3],
+                            z=pose.object_to_reference_matrix[2, 3])
+                        table_rows.append(table_row)
+                        self._tracked_target_poses.append(pose)
+                        if self._renderer is not None:
+                            self._renderer.add_scene_object(
+                                model_key=POSE_REPRESENTATIVE_MODEL,
+                                transform_to_world=pose.object_to_reference_matrix)
+                self._tracking_table.update_contents(row_contents=table_rows)
+                if len(table_rows) > 0:
+                    self._tracking_table.Enable(True)
+                else:
+                    self._tracking_table.Enable(False)
+
         if len(self._active_request_ids) > 0:
             completed_request_ids: list[uuid.UUID] = list()
             for request_id in self._active_request_ids:
@@ -694,8 +428,6 @@ class PoseSolverPanel(BasePanel):
                     completed_request_ids.append(request_id)
             for request_id in completed_request_ids:
                 self._active_request_ids.remove(request_id)
-            if len(self._active_request_ids) == 0:
-                self.on_active_request_ids_processed()
 
         if ui_needs_update:
             self._update_controls()
@@ -712,14 +444,14 @@ class PoseSolverPanel(BasePanel):
         self._tracking_stop_button.Enable(False)
         self._tracking_table.Enable(False)
         self._tracking_display_textbox.Enable(False)
-        if len(self._active_request_ids) > 0:
+        if len(self._active_request_ids) > 0 or self._connector.is_in_transition():
             return  # We're waiting for something
         self._pose_solver_selector.Enable(True)
         self._reference_marker_id_spinbox.Enable(True)
         self._reference_target_submit_button.Enable(True)
         self._tracked_marker_id_spinbox.Enable(True)
         self._tracked_target_submit_button.Enable(True)
-        if not self._is_solving:
+        if not self._connector.is_running():
             self._tracking_start_button.Enable(True)
         else:
             self._tracking_stop_button.Enable(True)
@@ -730,8 +462,8 @@ class PoseSolverPanel(BasePanel):
                 if tracked_target_index >= len(self._tracked_target_poses):
                     self.status_message_source.enqueue_status_message(
                         severity="warning",
-                        message=f"Selected tracked target index {tracked_target_index} is out of bounds. Setting to None.")
+                        message=f"Selected tracked target index {tracked_target_index} is out of bounds. "
+                                "Setting to None.")
                     self._tracking_table.set_selected_row_index(None)
                 else:
                     self._tracking_display_textbox.Enable(True)
-
