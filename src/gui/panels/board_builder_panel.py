@@ -5,17 +5,21 @@ from typing import Final, Optional
 import wx
 import wx.grid
 from cv2 import aruco
+import datetime
 
 from .base_panel import BasePanel
 from .feedback import ImagePanel
 from .parameters import ParameterSpinboxFloat, ParameterSpinboxInteger
 
 from src.board_builder import BoardBuilder
-from src.common.structures import IntrinsicParameters
+from src.common.structures import IntrinsicParameters, Matrix4x4, PoseSolverFrame, Pose
 from src.connector import Connector
 from src.common import (
     StatusMessageSource
 )
+from .pose_solver_panel import POSE_REPRESENTATIVE_MODEL
+from .specialized import \
+    GraphicsRenderer
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +37,8 @@ class BoardBuilderPanel(BasePanel):
     _build_board_button: wx.Button
 
     _image_panel: ImagePanel
+    _tracked_target_poses: list[Pose]
+    _latest_pose_solver_frames: dict[str, PoseSolverFrame]
 
     # TODO: User Input
     # TODO: Feature where user chooses origin marker (Right now it just takes the first it reads)
@@ -92,6 +98,9 @@ class BoardBuilderPanel(BasePanel):
             (255, 0, 0),  # Blue
             (0, 255, 255),  # Cyan
         ]
+
+        self._tracked_target_poses = list()
+        self._latest_pose_solver_frames = dict()
 
         ### USER INTERFACE FUNCTIONALITIES AND BUTTONS ###
         horizontal_split_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.HORIZONTAL)
@@ -194,6 +203,13 @@ class BoardBuilderPanel(BasePanel):
             window=self._image_panel,
             flags=wx.SizerFlags(65).Expand())
 
+        self._renderer = GraphicsRenderer(parent=self)
+        horizontal_split_sizer.Add(
+            window=self._renderer,
+            flags=wx.SizerFlags(65).Expand())
+        #self._renderer.load_models_into_context_from_data_path()
+        #self._renderer.add_scene_object("coordinate_axes", Matrix4x4())
+
         self.SetSizerAndFit(sizer=horizontal_split_sizer)
 
 
@@ -238,6 +254,11 @@ class BoardBuilderPanel(BasePanel):
     def update_loop(self) -> None:
         super().update_loop()
 
+        now_timestamp = datetime.datetime.now()
+
+        if self._renderer is not None:
+            self._renderer.render()
+
         if self.cap is None or not self.cap.isOpened():
             return
 
@@ -256,6 +277,7 @@ class BoardBuilderPanel(BasePanel):
         if self._setting_reference:
             self.board_builder.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
             self.board_builder.set_board_marker_ids(self.BOARD_MARKER_IDS)
+            self.board_builder.pose_solver.set_board_marker_size(self.MARKER_SIZE_MM)
             self.board_builder.locate_reference_markers(ids, corners)
 
         elif self._collecting_data:
@@ -268,10 +290,50 @@ class BoardBuilderPanel(BasePanel):
                 corners_dict = self.board_builder.build_board(ids, corners)
                 self.draw_all_corners(corners_dict, frame)
 
+                detector_poses_list = []
+                target_poses_list = self.board_builder.target_poses
+
+                for detector in self.board_builder.detector_poses:
+                    matrix = self.board_builder.detector_poses[detector].get_matrix()
+                    detector_poses_list.append(Pose(
+                        target_id=detector,
+                        object_to_reference_matrix=Matrix4x4.from_numpy_array(matrix),
+                        solver_timestamp_utc_iso8601="now_timestamp"  #TODO: Should be the timestamp of locate reference
+                    ))
+
+                pose_solver_frame = PoseSolverFrame(
+                    detector_poses=detector_poses_list,
+                    target_poses=target_poses_list,
+                    timestamp_utc_iso8601=str(now_timestamp)
+                )
+
+                ### RENDERER ###
+                """
+                self._tracked_target_poses.clear()
+                if self._renderer is not None:
+                    self._latest_pose_solver_frames['default_camera'] = pose_solver_frame
+                    self._renderer.clear_scene_objects()
+                    self._renderer.add_scene_object(  # Reference
+                        model_key=POSE_REPRESENTATIVE_MODEL,
+                        transform_to_world=Matrix4x4())
+                for live_pose_solver in self._latest_pose_solver_frames.values():
+                    for pose in live_pose_solver.target_poses:
+                        self._tracked_target_poses.append(pose)
+                        if self._renderer is not None:
+                            self._renderer.add_scene_object(
+                                model_key=POSE_REPRESENTATIVE_MODEL,
+                                transform_to_world=pose.object_to_reference_matrix)
+                        if self._renderer is not None:
+                            self._renderer.add_scene_object(
+                                model_key=POSE_REPRESENTATIVE_MODEL,
+                                transform_to_world=pose.object_to_reference_matrix)
+                """
+
         height, width = frame.shape[:2]
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         bitmap = wx.Bitmap.FromBuffer(width, height, frame_rgb)
         self._image_panel.set_bitmap(bitmap)
+
         self.Refresh()
 
     ### MAIN BUTTONS ###

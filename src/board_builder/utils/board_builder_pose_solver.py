@@ -219,7 +219,7 @@ class BoardBuilderPoseSolver:
         for marker_id in self._board_marker_ids:
             x_coords = [30.0, 70.0, 110.0, 150.0, 10.0, 50.0, 90.0, 130.0]
             x = x_coords[marker_id % 8]
-            y = 10.0 + (marker_id // 4) * 20.0
+            y = 190.0 - (marker_id // 4) * 20.0
             z = 0.0
             self._board_marker_positions.append([x, y, z])
 

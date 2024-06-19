@@ -13,8 +13,8 @@ class BoardBuilder:
         self.DETECTOR_GREEN_INTRINSICS = detectors_intrinsics
 
         ### POSE SOLVER INIT ###
-        self._detector_poses = {}
-        self._target_poses = []
+        self.detector_poses = {}
+        self.target_poses = []
         self._visible_markers = []
         self._index_to_marker_uuid = {}
         self.pose_solver = BoardBuilderPoseSolver()
@@ -104,7 +104,7 @@ class BoardBuilder:
 
             if markers_visible:
                 target_poses = self.pose_solver.get_target_poses()
-                self._target_poses = target_poses
+                self.target_poses = target_poses
                 visible_markers = []
                 for pose in target_poses:
                     visible_markers.append(pose.target_id)
@@ -142,17 +142,17 @@ class BoardBuilder:
         if reference_visible:
             detector_poses = self.pose_solver.get_detector_poses()
             for pose in detector_poses:
-                if pose.target_id not in self._detector_poses:
-                    self._detector_poses[pose.target_id] = PoseLocation()
-                self._detector_poses[pose.target_id].add_matrix(np.array(pose.object_to_reference_matrix.values).reshape(4, 4))
-            self.pose_solver.set_detector_poses(self._detector_poses)
+                if pose.target_id not in self.detector_poses:
+                    self.detector_poses[pose.target_id] = PoseLocation()
+                self.detector_poses[pose.target_id].add_matrix(np.array(pose.object_to_reference_matrix.values).reshape(4, 4))
+            self.pose_solver.set_detector_poses(self.detector_poses)
 
 
     def collect_data(self, ids, corners):
         """ Collects data of relative position and is entered in matrix. Returns a dictionary of its corners"""
         corners_dict = {}
         self._solve_pose(ids, corners)
-        for index, pose in enumerate(self._target_poses):
+        for index, pose in enumerate(self.target_poses):
             # R R R T
             # R R R T
             # R R R T
@@ -161,7 +161,7 @@ class BoardBuilder:
             pose_values = pose.object_to_reference_matrix.values
             pose_matrix = np.array(pose_values).reshape(4, 4)
 
-            for other_pose in self._target_poses:
+            for other_pose in self.target_poses:
                 if other_pose != pose:
                     other_matrix_values = other_pose.object_to_reference_matrix.values
                     other_pose_matrix = np.array(other_matrix_values).reshape(4, 4)
@@ -175,7 +175,7 @@ class BoardBuilder:
                     else:
                         self._relative_pose_matrix[matrix_index[0]][matrix_index[1]].add_matrix(relative_transform)
 
-        for index, pose in enumerate(self._target_poses):
+        for index, pose in enumerate(self.target_poses):
             pose_values = pose.object_to_reference_matrix.values
             pose_matrix = np.array(pose_values).reshape(4, 4)
             corners_location = self._calculate_corners_location(pose_matrix, self.local_corners)
@@ -189,8 +189,8 @@ class BoardBuilder:
 
         corners_dict = {}
         self._solve_pose(ids, corners)
-        if self._target_poses:
-            for pose in self._target_poses:
+        if self.target_poses:
+            for pose in self.target_poses:
                 pose_values = pose.object_to_reference_matrix.values
                 pose_matrix = np.array(pose_values).reshape(4, 4)
                 corners_location = self._calculate_corners_location(pose_matrix, self.local_corners)
@@ -200,7 +200,7 @@ class BoardBuilder:
             for marker_uuid in list(self._index_to_marker_uuid.values()):
                 if marker_uuid not in self._visible_markers:
                     estimated_pose_location = PoseLocation()
-                    for other_marker_pose in self._target_poses:
+                    for other_marker_pose in self.target_poses:
                         matrix_index = self._find_matrix_input_index(other_marker_pose.target_id, marker_uuid)
 
                         if (self._relative_pose_matrix[matrix_index[0]][matrix_index[1]] and other_marker_pose.target_id
