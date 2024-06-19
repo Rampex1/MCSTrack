@@ -1,6 +1,6 @@
 import math
 
-from src.board_builder.structures.pose_location import PoseLocation
+from src.board_builder.structures import PoseLocation, CharucoBoard
 from src.common.structures import \
     IntrinsicParameters, \
     Matrix4x4, \
@@ -189,39 +189,9 @@ class BoardBuilderPoseSolver:
         self._board_marker_ids = []
         self._board_marker_size = 10
 
-        """
-        self.board_marker_positions = [
-            [30.0, 10.0, 0.0], [70.0, 10.0, 0.0], [110.0, 10.0, 0.0], [150.0, 10.0, 0.0],
-            [10.0, 30.0, 0.0], [50.0, 30.0, 0.0], [90.0, 30.0, 0.0], [130.0, 30.0, 0.0], 
-            [30.0, 50.0, 0.0], [70.0, 50.0, 0.0], [110.0, 50.0, 0.0], [150.0, 50.0, 0.0],
-            [10.0, 70.0, 0.0], [50.0, 70.0, 0.0], [90.0, 70.0, 0.0], [130.0, 70.0, 0.0], 
-            [30.0, 90.0, 0.0], [70.0, 90.0, 0.0], [110.0, 90.0, 0.0], [150.0, 90.0, 0.0],
-            [10.0, 110.0, 0.0], [50.0, 110.0, 0.0], [90.0, 110.0, 0.0], [130.0, 110.0, 0.0], 
-            [30.0, 130.0, 0.0], [70.0, 130.0, 0.0], [110.0, 130.0, 0.0], [150.0, 130.0, 0.0],
-            [10.0, 150.0, 0.0], [50.0, 150.0, 0.0], [90.0, 150.0, 0.0], [130.0, 150.0, 0.0], 
-            [30.0, 170.0, 0.0], [70.0, 170.0, 0.0], [110.0, 170.0, 0.0], [150.0, 170.0, 0.0],
-            [10.0, 190.0, 0.0], [50.0, 190.0, 0.0], [90.0, 190.0, 0.0], [130.0, 190.0, 0.0], 
-        ]
-        """
-        self._board_marker_ids = [
-            0,  1,  2,  3,
-            4,  5,  6,  7,
-            8,  9, 10, 11,
-            12, 13, 13, 15,
-            16, 17, 18, 19,
-            20, 21, 22, 23,
-            24, 25, 26, 27,
-            28, 29, 30, 31,
-            32, 33, 34, 35,
-            36, 37, 38, 39
-        ]
-        self._board_marker_positions = []
-        for marker_id in self._board_marker_ids:
-            x_coords = [30.0, 70.0, 110.0, 150.0, 10.0, 50.0, 90.0, 130.0]
-            x = x_coords[marker_id % 8]
-            y = 190.0 - (marker_id // 4) * 20.0
-            z = 0.0
-            self._board_marker_positions.append([x, y, z])
+        self._charuco_board = CharucoBoard()
+        self._board_marker_ids = self._charuco_board.get_ids()
+        self._board_marker_positions = self._charuco_board.get_positions()
 
     def add_marker_corners(
         self,
