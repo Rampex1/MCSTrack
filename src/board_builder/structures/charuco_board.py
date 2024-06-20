@@ -28,5 +28,6 @@ class CharucoBoard:
         return self._board_marker_ids
 
     def get_positions(self):
+        self._generate_board()
         return self._board_marker_positions
 

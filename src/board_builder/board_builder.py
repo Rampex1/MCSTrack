@@ -122,9 +122,6 @@ class BoardBuilder:
     ) -> None:
         self.pose_solver.set_intrinsic_parameters(detector_label, intrinsic_parameters)
 
-    def set_board_marker_ids(self, board_marker_ids):
-        self.pose_solver.set_board_marker_ids(board_marker_ids)
-
     def locate_reference_markers(self, ids, corners):
         reference_visible = False
 

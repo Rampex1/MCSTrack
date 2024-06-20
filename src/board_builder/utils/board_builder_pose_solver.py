@@ -1,5 +1,3 @@
-import math
-
 from src.board_builder.structures import PoseLocation, CharucoBoard
 from src.common.structures import \
     IntrinsicParameters, \
@@ -159,9 +157,18 @@ class BoardBuilderPoseSolver:
 
     _marker_rayset_by_marker_key: dict[MarkerKey, MarkerRaySet]
 
+    _alpha_poses_by_target_id: dict[uuid.UUID, list[PoseData]]
+    _target_extrapolation_poses_by_target_id: dict[uuid.UUID, list[PoseData]]
     _poses_by_target_id: dict[uuid.UUID, PoseData]
     _poses_by_detector_label: dict[str, Matrix4x4]
+    _target_depths_by_target_depth_key: dict[TargetDepthKey, list[TargetDepth]]
     _poses_average_by_detector_label: dict[str, PoseLocation()]
+
+    _minimum_marker_age_before_removal_seconds: float
+
+    _board_marker_ids: list[int]
+    _board_marker_positions: list[list[int]]
+    _board_marker_size: int
 
     def __init__(self):
 
@@ -174,8 +181,8 @@ class BoardBuilderPoseSolver:
         self._target_extrapolation_poses_by_target_id = dict()
         self._poses_by_target_id = dict()
         self._poses_by_detector_label = dict()
-        self._poses_average_by_detector_label = dict()
         self._target_depths_by_target_depth_key = dict()
+        self._poses_average_by_detector_label = dict()
 
         self._minimum_marker_age_before_removal_seconds = max([
             self._parameters.POSE_DETECTOR_DENOISE_LIMIT_AGE_SECONDS,
@@ -184,14 +191,10 @@ class BoardBuilderPoseSolver:
             self._parameters.POSE_SINGLE_CAMERA_DEPTH_LIMIT_AGE_SECONDS,
             self._parameters.POSE_MULTI_CAMERA_LIMIT_RAY_AGE_SECONDS])
 
-        self._now_timestamp = None
-
-        self._board_marker_ids = []
-        self._board_marker_size = 10
-
         self._charuco_board = CharucoBoard()
         self._board_marker_ids = self._charuco_board.get_ids()
         self._board_marker_positions = self._charuco_board.get_positions()
+        self._board_marker_size = 10
 
     def add_marker_corners(
         self,
@@ -247,10 +250,6 @@ class BoardBuilderPoseSolver:
 
     def set_detector_poses(self, detector_poses_by_label):
         self._poses_average_by_detector_label = detector_poses_by_label
-
-    def set_board_marker_ids(self, board_marker_ids):
-        #self._board_marker_ids = board_marker_ids
-        pass
 
     def set_board_marker_size(self, board_marker_size):
         self._board_marker_size = board_marker_size
@@ -449,7 +448,7 @@ class BoardBuilderPoseSolver:
             if len(detected_marker_positions) == 0:
                 continue  # Skip if no markers are detected
 
-            half_width: float = 10 / 2.0
+            half_width: float = self._board_marker_size / 2.0
             reference_points = []
             for position in detected_marker_positions:
                 single_reference_points = numpy.array([
@@ -767,3 +766,4 @@ class BoardBuilderPoseSolver:
             image_point_set_keys_with_reference_visible.append(image_point_sets_key)
 
         return image_point_sets_by_image_key, image_point_set_keys_with_reference_visible
+

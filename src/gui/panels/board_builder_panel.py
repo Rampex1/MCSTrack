@@ -249,7 +249,6 @@ class BoardBuilderPanel(BasePanel):
         self._collecting_data = False
         self._building_board = False
         self.board_builder = BoardBuilder(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
-        self.board_builder.pose_solver.set_board_marker_size(self._marker_size)
 
     def update_loop(self) -> None:
         super().update_loop()
@@ -276,8 +275,6 @@ class BoardBuilderPanel(BasePanel):
 
         if self._setting_reference:
             self.board_builder.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
-            self.board_builder.set_board_marker_ids(self.BOARD_MARKER_IDS)
-            self.board_builder.pose_solver.set_board_marker_size(self.MARKER_SIZE_MM)
             self.board_builder.locate_reference_markers(ids, corners)
 
         elif self._collecting_data:
@@ -363,7 +360,6 @@ class BoardBuilderPanel(BasePanel):
 
     def on_locate_reference_button_click(self, event: wx.CommandEvent) -> None:
         if self._locate_reference_button.GetValue():
-            self._reset()
             self._locate_reference_button.SetLabel("Stop Locate Reference")
             self._locate_reference_button.Enable(True)
             self._collect_data_button.Enable(False)
