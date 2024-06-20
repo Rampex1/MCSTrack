@@ -1,14 +1,20 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-class PoseLocation:
-    def __init__(self):
-        self.__TMatrix = np.eye(4)
+from src.common.structures import Matrix4x4, Pose
 
+
+class PoseLocation:
+    def __init__(self, object_id):
+        self._id = object_id
+        self._timestamp = None
+
+        self.__TMatrix = np.eye(4)
         self.__RMAT_list = []  # Rotation matrix
         self.__TVEC_list = []  # Translation vector
 
-    def add_matrix(self, transformation_matrix):
+    def add_matrix(self, transformation_matrix, timestamp):
+        self._timestamp = timestamp
 
         self.__RMAT_list.append(transformation_matrix[:3, :3])
         self.__TVEC_list.append(transformation_matrix[:3, 3])
@@ -23,7 +29,13 @@ class PoseLocation:
         self.__TMatrix[:3, :3] = avg_rotation
         self.__TMatrix[:3, 3] = avg_translation
 
-    def get_matrix(self):
+    def get_matrix(self): #TODO: Remove
         return self.__TMatrix
 
-
+    def get_pose(self):
+        pose = Pose(
+            target_id=self._id,
+            object_to_reference_matrix=Matrix4x4.from_numpy_array(self.__TMatrix),
+            solver_timestamp_utc_iso8601=self._timestamp
+        )
+        return pose

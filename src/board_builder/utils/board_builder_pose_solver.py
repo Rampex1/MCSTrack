@@ -162,7 +162,7 @@ class BoardBuilderPoseSolver:
     _poses_by_target_id: dict[uuid.UUID, PoseData]
     _poses_by_detector_label: dict[str, Matrix4x4]
     _target_depths_by_target_depth_key: dict[TargetDepthKey, list[TargetDepth]]
-    _poses_average_by_detector_label: dict[str, PoseLocation()]
+    _poses_average_by_detector_label: dict[str, PoseLocation]
 
     _minimum_marker_age_before_removal_seconds: float
 
@@ -503,7 +503,7 @@ class BoardBuilderPoseSolver:
             if marker_key in self._marker_rayset_by_marker_key:
                 if self._marker_rayset_by_marker_key[marker_key].image_timestamp > image_timestamp:
                     continue  # A newer timestamp was found in this iteration. Skip the older one.
-            detector_to_reference_matrix: Matrix4x4 = Matrix4x4.from_numpy_array(self._poses_average_by_detector_label[image_point_set.detector_label].get_matrix())
+            detector_to_reference_matrix: Matrix4x4 = self._poses_average_by_detector_label[image_point_set.detector_label].get_pose().object_to_reference_matrix
             self._marker_rayset_by_marker_key[marker_key] = self._calculate_marker_ray_set(
                 image_point_set=image_point_set,
                 detector_to_reference_matrix=detector_to_reference_matrix)

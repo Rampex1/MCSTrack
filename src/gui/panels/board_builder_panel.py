@@ -291,11 +291,11 @@ class BoardBuilderPanel(BasePanel):
                 target_poses_list = self.board_builder.target_poses
 
                 for detector in self.board_builder.detector_poses:
-                    matrix = self.board_builder.detector_poses[detector].get_matrix()
+                    pose = self.board_builder.detector_poses[detector].get_pose()
                     detector_poses_list.append(Pose(
-                        target_id=detector,
-                        object_to_reference_matrix=Matrix4x4.from_numpy_array(matrix),
-                        solver_timestamp_utc_iso8601="now_timestamp"  #TODO: Should be the timestamp of locate reference
+                        target_id=pose.target_id,
+                        object_to_reference_matrix=pose.object_to_reference_matrix,
+                        solver_timestamp_utc_iso8601=pose.solver_timestamp_utc_iso8601
                     ))
 
                 pose_solver_frame = PoseSolverFrame(

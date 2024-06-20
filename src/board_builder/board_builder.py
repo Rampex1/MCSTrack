@@ -12,6 +12,7 @@ class BoardBuilder:
         self.DETECTOR_GREEN_INTRINSICS = detectors_intrinsics  #TODO: Should be a list of detector intrinsics
 
         ### POSE SOLVER INIT ###
+        self._detector_poses_average = {}
         self.detector_poses = {}  #TODO: Should be a list of poses
         self.target_poses = []
         self._visible_markers = []
@@ -121,11 +122,11 @@ class BoardBuilder:
                 )
                 self.pose_solver.add_marker_corners([marker_corners])
 
-            detector_poses = self.pose_solver.get_detector_poses()
-            for pose in detector_poses:
+            new_detector_poses = self.pose_solver.get_detector_poses()
+            for pose in new_detector_poses:
                 if pose.target_id not in self.detector_poses:
-                    self.detector_poses[pose.target_id] = PoseLocation()
-                self.detector_poses[pose.target_id].add_matrix(np.array(pose.object_to_reference_matrix.values).reshape(4, 4))
+                    self.detector_poses[pose.target_id] = PoseLocation(pose.target_id)
+                self.detector_poses[pose.target_id].add_matrix(np.array(pose.object_to_reference_matrix.values).reshape(4, 4), str(datetime.datetime.now())) # TODO: Timestamp
             self.pose_solver.set_detector_poses(self.detector_poses)
 
 
@@ -150,11 +151,11 @@ class BoardBuilder:
                     matrix_index = self._find_matrix_input_index(pose.target_id, other_pose.target_id)
 
                     if not self._relative_pose_matrix[matrix_index[0]][matrix_index[1]]:
-                        new_pose_location = PoseLocation()
-                        new_pose_location.add_matrix(relative_transform)
+                        new_pose_location = PoseLocation(pose.target_id)
+                        new_pose_location.add_matrix(relative_transform, datetime.datetime.now())
                         self._relative_pose_matrix[matrix_index[0]][matrix_index[1]] = new_pose_location
                     else:
-                        self._relative_pose_matrix[matrix_index[0]][matrix_index[1]].add_matrix(relative_transform)
+                        self._relative_pose_matrix[matrix_index[0]][matrix_index[1]].add_matrix(relative_transform, datetime.datetime.now())
 
         for index, pose in enumerate(self.target_poses):
             pose_values = pose.object_to_reference_matrix.values
@@ -180,7 +181,7 @@ class BoardBuilder:
             ### ID IS NOT IN FRAME ###
             for marker_uuid in list(self._index_to_marker_uuid.values()):
                 if marker_uuid not in self._visible_markers:
-                    estimated_pose_location = PoseLocation()
+                    estimated_pose_location = PoseLocation(marker_uuid)
                     for other_marker_pose in self.target_poses:
                         matrix_index = self._find_matrix_input_index(other_marker_pose.target_id, marker_uuid)
 
@@ -190,7 +191,7 @@ class BoardBuilder:
                             T_AB = np.reshape(T_AB, (4, 4))
                             T_BC = self._relative_pose_matrix[matrix_index[0]][matrix_index[1]].get_matrix()
                             T_AC = self._estimate_reference_to_occluded(T_AB, T_BC)
-                            estimated_pose_location.add_matrix(T_AC)
+                            estimated_pose_location.add_matrix(T_AC, datetime.datetime.now())
                     marker_pose_matrix = estimated_pose_location.get_matrix()
                     invisible_corners_location = self._calculate_corners_location(marker_pose_matrix,
                                                                                   self.local_corners)
