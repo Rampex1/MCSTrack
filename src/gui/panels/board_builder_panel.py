@@ -38,7 +38,7 @@ class BoardBuilderPanel(BasePanel):
     _tracked_target_poses: list[Pose]
     _latest_pose_solver_frames: dict[str, PoseSolverFrame]
 
-    # TODO: This will be determined from calibration
+    # TODO: 3 This will be determined from calibration
     DETECTOR_GREEN_NAME: Final[str] = "default_camera"
     DETECTOR_GREEN_INTRINSICS: Final[IntrinsicParameters] = IntrinsicParameters(
         focal_length_x_px=629.7257712407858,
@@ -232,7 +232,7 @@ class BoardBuilderPanel(BasePanel):
         self._setting_reference = False
         self._collecting_data = False
         self._building_board = False
-        self.board_builder = BoardBuilder(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
+        self.board_builder = BoardBuilder(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)  # TODO: 3 Calibration
 
     def _render_pose_solver_frame(self, detector_poses, target_poses):
         pose_solver_frame = PoseSolverFrame(
@@ -263,6 +263,7 @@ class BoardBuilderPanel(BasePanel):
         """
 
     def update_loop(self) -> None:
+        # TODO: 2 Two cameras
         super().update_loop()
 
         if self._renderer is not None:
@@ -284,7 +285,7 @@ class BoardBuilderPanel(BasePanel):
         aruco.drawDetectedMarkers(frame, corners, ids)
 
         if self._setting_reference:
-            self.board_builder.pose_solver.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
+            self.board_builder.pose_solver.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)  # TODO: 3 Calibration
             self.board_builder.locate_reference_markers(ids, corners)
 
         elif self._collecting_data:
@@ -347,6 +348,7 @@ class BoardBuilderPanel(BasePanel):
             self._collect_data_button.Enable(True)
 
     def on_collect_data_button_click(self, event: wx.CommandEvent) -> None:
+        # TODO: 1 Toggle
         self._build_board_button.Enable(True)
         self._setting_reference = False
         self._collecting_data = True

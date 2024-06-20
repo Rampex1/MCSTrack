@@ -8,8 +8,8 @@ from src.pose_solver.structures import MarkerCorners
 
 class BoardBuilder:
 
-    _DETECTOR_GREEN_NAME: str  #TODO: Change name
-    _DETECTOR_GREEN_INTRINSIC: IntrinsicParameters  #TODO: Change name
+    _DETECTOR_GREEN_NAME: str  # TODO: 3 Change name
+    _DETECTOR_GREEN_INTRINSIC: IntrinsicParameters  # TODO: 3 Change name
 
     _detector_poses_average: dict[str, PoseLocation]
     _detector_poses: list[Pose]
@@ -23,8 +23,8 @@ class BoardBuilder:
 
     def __init__(self, detectors_name, detectors_intrinsics):
         ### PARAMETERS INIT ###
-        self.DETECTOR_GREEN_NAME = detectors_name  #TODO: Should be a list of detector names
-        self.DETECTOR_GREEN_INTRINSICS = detectors_intrinsics  #TODO: Should be a list of detector intrinsics
+        self.DETECTOR_GREEN_NAME = detectors_name  # TODO: 3 Should be a list of detector names
+        self.DETECTOR_GREEN_INTRINSICS = detectors_intrinsics  # TODO: 3 Should be a list of detector intrinsics
 
         ### POSE SOLVER INIT ###
         self._detector_poses_average = {}
@@ -97,7 +97,7 @@ class BoardBuilder:
 
         return pose_index, other_pose_index
 
-    # TODO: Change this for two detectors
+    # TODO: 2 Change this for two detectors
     def _solve_pose(self, ids, corners):
         """ Given marker ids and its corner locations, find its pose """
         if ids is not None:
