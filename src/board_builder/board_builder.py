@@ -2,11 +2,25 @@ import datetime
 import numpy as np
 from src.board_builder.utils.board_builder_pose_solver import BoardBuilderPoseSolver
 from src.board_builder.structures.pose_location import PoseLocation
-from src.common.structures import Pose
+from src.common.structures import Pose, IntrinsicParameters
 from src.pose_solver.structures import MarkerCorners
 
 
 class BoardBuilder:
+
+    _DETECTOR_GREEN_NAME: str  #TODO: Change name
+    _DETECTOR_GREEN_INTRINSIC: IntrinsicParameters  #TODO: Change name
+
+    _detector_poses_average: dict[str, PoseLocation]
+    _detector_poses: list[Pose]
+    _target_poses: list[Pose]
+    _occluded_poses: list[Pose]
+    _visible_markers: list[str]
+    _index_to_marker_uuid: dict[int, str]
+
+    _relative_pose_matrix = list[list[int]]
+    _local_corners = list[list[int]]
+
     def __init__(self, detectors_name, detectors_intrinsics):
         ### PARAMETERS INIT ###
         self.DETECTOR_GREEN_NAME = detectors_name  #TODO: Should be a list of detector names
@@ -83,10 +97,10 @@ class BoardBuilder:
 
         return pose_index, other_pose_index
 
-
+    # TODO: Change this for two detectors
     def _solve_pose(self, ids, corners):
         """ Given marker ids and its corner locations, find its pose """
-        if ids is not None:  # TODO: Change this for two detectors
+        if ids is not None:
             for marker_id in range(len(ids)):
                 if self.pose_solver.add_target_marker(ids[marker_id][0]):
                     self._expand_matrix()
@@ -115,6 +129,7 @@ class BoardBuilder:
     ### PUBLIC METHOD ###
     def locate_reference_markers(self, ids, corners):
         if ids is not None:
+            self.detector_poses = []
             for i, corner in enumerate(corners):
                 marker_corners = MarkerCorners(
                     detector_label=self.DETECTOR_GREEN_NAME,
@@ -125,11 +140,10 @@ class BoardBuilder:
                 self.pose_solver.add_marker_corners([marker_corners])
 
             new_detector_poses = self.pose_solver.get_detector_poses()
-            self.detector_poses = [] #TODO:MOVE ?
             for pose in new_detector_poses:
                 if pose.target_id not in self._detector_poses_average:
                     self._detector_poses_average[pose.target_id] = PoseLocation(pose.target_id)
-                self._detector_poses_average[pose.target_id].add_matrix(np.array(pose.object_to_reference_matrix.values).reshape(4, 4), str(datetime.datetime.now())) # TODO: Timestamp
+                self._detector_poses_average[pose.target_id].add_matrix(np.array(pose.object_to_reference_matrix.values).reshape(4, 4), str(datetime.datetime.now()))
             for label in self._detector_poses_average:
                 pose = Pose(
                     target_id=label,
@@ -174,7 +188,6 @@ class BoardBuilder:
             corners_dict[pose.target_id] = corners_location
 
         return corners_dict
-
 
     def build_board(self, ids, corners):
         """ Builds board using the relative matrix"""

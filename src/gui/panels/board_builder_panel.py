@@ -38,20 +38,6 @@ class BoardBuilderPanel(BasePanel):
     _tracked_target_poses: list[Pose]
     _latest_pose_solver_frames: dict[str, PoseSolverFrame]
 
-    # TODO: User Input
-    # TODO: Feature where user chooses origin marker (Right now it just takes the first it reads)
-    BOARD_MARKER_IDS = [
-            36, 28, 20, 12, 4,
-            32, 24, 16, 8, 0,
-            37, 29, 21, 13, 5,
-            33, 25, 17, 9, 1,
-            38, 30, 22, 14, 6,
-            34, 26, 18, 10, 2,
-            39, 31, 23, 15, 7,
-            35, 27, 19, 11, 3
-        ]
-    MARKER_SIZE_MM: Final[float] = 10.0
-
     # TODO: This will be determined from calibration
     DETECTOR_GREEN_NAME: Final[str] = "default_camera"
     DETECTOR_GREEN_INTRINSICS: Final[IntrinsicParameters] = IntrinsicParameters(
