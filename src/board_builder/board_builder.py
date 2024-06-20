@@ -2,6 +2,7 @@ import datetime
 import numpy as np
 from src.board_builder.utils.board_builder_pose_solver import BoardBuilderPoseSolver
 from src.board_builder.structures.pose_location import PoseLocation
+from src.common.structures import Pose
 from src.pose_solver.structures import MarkerCorners
 
 
@@ -12,9 +13,9 @@ class BoardBuilder:
         self.DETECTOR_GREEN_INTRINSICS = detectors_intrinsics  #TODO: Should be a list of detector intrinsics
 
         ### POSE SOLVER INIT ###
-        self._detector_poses_average = {}
-        self.detector_poses = {}  #TODO: Should be a list of poses
+        self.detector_poses = {}
         self.target_poses = []
+        self.occluded_poses = []
         self._visible_markers = []
         self._index_to_marker_uuid = {}
         self.pose_solver = BoardBuilderPoseSolver()
@@ -129,10 +130,10 @@ class BoardBuilder:
                 self.detector_poses[pose.target_id].add_matrix(np.array(pose.object_to_reference_matrix.values).reshape(4, 4), str(datetime.datetime.now())) # TODO: Timestamp
             self.pose_solver.set_detector_poses(self.detector_poses)
 
-
     def collect_data(self, ids, corners):
         """ Collects data of relative position and is entered in matrix. Returns a dictionary of its corners"""
         corners_dict = {}
+        self.target_poses = []
         self._solve_pose(ids, corners)
         for index, pose in enumerate(self.target_poses):
             # R R R T
@@ -152,10 +153,10 @@ class BoardBuilder:
 
                     if not self._relative_pose_matrix[matrix_index[0]][matrix_index[1]]:
                         new_pose_location = PoseLocation(pose.target_id)
-                        new_pose_location.add_matrix(relative_transform, datetime.datetime.now())
+                        new_pose_location.add_matrix(relative_transform, str(datetime.datetime.now()))
                         self._relative_pose_matrix[matrix_index[0]][matrix_index[1]] = new_pose_location
                     else:
-                        self._relative_pose_matrix[matrix_index[0]][matrix_index[1]].add_matrix(relative_transform, datetime.datetime.now())
+                        self._relative_pose_matrix[matrix_index[0]][matrix_index[1]].add_matrix(relative_transform, str(datetime.datetime.now()))
 
         for index, pose in enumerate(self.target_poses):
             pose_values = pose.object_to_reference_matrix.values
@@ -170,6 +171,7 @@ class BoardBuilder:
         """ Builds board using the relative matrix"""
 
         corners_dict = {}
+        self.occluded_poses = []
         self._solve_pose(ids, corners)
         if self.target_poses:
             for pose in self.target_poses:
@@ -191,10 +193,16 @@ class BoardBuilder:
                             T_AB = np.reshape(T_AB, (4, 4))
                             T_BC = self._relative_pose_matrix[matrix_index[0]][matrix_index[1]].get_matrix()
                             T_AC = self._estimate_reference_to_occluded(T_AB, T_BC)
-                            estimated_pose_location.add_matrix(T_AC, datetime.datetime.now())
+                            estimated_pose_location.add_matrix(T_AC, str(datetime.datetime.now()))
                     marker_pose_matrix = estimated_pose_location.get_matrix()
+                    pose = estimated_pose_location.get_pose()
                     invisible_corners_location = self._calculate_corners_location(marker_pose_matrix,
                                                                                   self.local_corners)
                     corners_dict[marker_uuid] = invisible_corners_location
+                    self.occluded_poses.append(Pose(
+                        target_id=pose.target_id,
+                        object_to_reference_matrix=pose.object_to_reference_matrix,
+                        solver_timestamp_utc_iso8601=pose.solver_timestamp_utc_iso8601
+                    ))
 
         return corners_dict

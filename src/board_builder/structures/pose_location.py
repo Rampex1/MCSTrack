@@ -1,3 +1,5 @@
+import datetime
+
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
@@ -7,7 +9,7 @@ from src.common.structures import Matrix4x4, Pose
 class PoseLocation:
     def __init__(self, object_id):
         self._id = object_id
-        self._timestamp = None
+        self._timestamp = str(datetime.datetime.now())
 
         self.__TMatrix = np.eye(4)
         self.__RMAT_list = []  # Rotation matrix

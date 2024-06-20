@@ -250,6 +250,44 @@ class BoardBuilderPanel(BasePanel):
         self._building_board = False
         self.board_builder = BoardBuilder(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
 
+    def _render_pose_solver_frame(self, detector_poses, target_poses):
+        detector_poses_list = []
+
+        for detector in detector_poses:
+            pose = self.board_builder.detector_poses[detector].get_pose()
+            detector_poses_list.append(Pose(
+                target_id=pose.target_id,
+                object_to_reference_matrix=pose.object_to_reference_matrix,
+                solver_timestamp_utc_iso8601=pose.solver_timestamp_utc_iso8601
+            ))
+
+        pose_solver_frame = PoseSolverFrame(
+            detector_poses=detector_poses_list,
+            target_poses=target_poses,
+            timestamp_utc_iso8601=str(datetime.datetime.now())
+        )
+        ### RENDERER ###
+        """
+        self._tracked_target_poses.clear()
+        if self._renderer is not None:
+            self._latest_pose_solver_frames['default_camera'] = pose_solver_frame
+            self._renderer.clear_scene_objects()
+            self._renderer.add_scene_object(  # Reference
+                model_key=POSE_REPRESENTATIVE_MODEL,
+                transform_to_world=Matrix4x4())
+        for live_pose_solver in self._latest_pose_solver_frames.values():
+            for pose in live_pose_solver.target_poses:
+                self._tracked_target_poses.append(pose)
+                if self._renderer is not None:
+                    self._renderer.add_scene_object(
+                        model_key=POSE_REPRESENTATIVE_MODEL,
+                        transform_to_world=pose.object_to_reference_matrix)
+                if self._renderer is not None:
+                    self._renderer.add_scene_object(
+                        model_key=POSE_REPRESENTATIVE_MODEL,
+                        transform_to_world=pose.object_to_reference_matrix)
+        """
+
     def update_loop(self) -> None:
         super().update_loop()
 
@@ -282,55 +320,20 @@ class BoardBuilderPanel(BasePanel):
                 corners_dict = self.board_builder.collect_data(ids, corners)
                 self.draw_all_corners(corners_dict, frame)
 
+                self._render_pose_solver_frame(self.board_builder.detector_poses, self.board_builder.target_poses)
+
         elif self._building_board:
             if ids is not None:
                 corners_dict = self.board_builder.build_board(ids, corners)
                 self.draw_all_corners(corners_dict, frame)
 
-                detector_poses_list = []
-                target_poses_list = self.board_builder.target_poses
-
-                for detector in self.board_builder.detector_poses:
-                    pose = self.board_builder.detector_poses[detector].get_pose()
-                    detector_poses_list.append(Pose(
-                        target_id=pose.target_id,
-                        object_to_reference_matrix=pose.object_to_reference_matrix,
-                        solver_timestamp_utc_iso8601=pose.solver_timestamp_utc_iso8601
-                    ))
-
-                pose_solver_frame = PoseSolverFrame(
-                    detector_poses=detector_poses_list,
-                    target_poses=target_poses_list,
-                    timestamp_utc_iso8601=str(now_timestamp)
-                )
-
-                ### RENDERER ###
-                """
-                self._tracked_target_poses.clear()
-                if self._renderer is not None:
-                    self._latest_pose_solver_frames['default_camera'] = pose_solver_frame
-                    self._renderer.clear_scene_objects()
-                    self._renderer.add_scene_object(  # Reference
-                        model_key=POSE_REPRESENTATIVE_MODEL,
-                        transform_to_world=Matrix4x4())
-                for live_pose_solver in self._latest_pose_solver_frames.values():
-                    for pose in live_pose_solver.target_poses:
-                        self._tracked_target_poses.append(pose)
-                        if self._renderer is not None:
-                            self._renderer.add_scene_object(
-                                model_key=POSE_REPRESENTATIVE_MODEL,
-                                transform_to_world=pose.object_to_reference_matrix)
-                        if self._renderer is not None:
-                            self._renderer.add_scene_object(
-                                model_key=POSE_REPRESENTATIVE_MODEL,
-                                transform_to_world=pose.object_to_reference_matrix)
-                """
+                self._render_pose_solver_frame(self.board_builder.detector_poses, self.board_builder.target_poses +
+                                               self.board_builder.occluded_poses)
 
         height, width = frame.shape[:2]
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         bitmap = wx.Bitmap.FromBuffer(width, height, frame_rgb)
         self._image_panel.set_bitmap(bitmap)
-
         self.Refresh()
 
     ### MAIN BUTTONS ###
