@@ -163,6 +163,7 @@ class BoardBuilderPoseSolver:
     _poses_by_detector_label: dict[str, Matrix4x4]
     _target_depths_by_target_depth_key: dict[TargetDepthKey, list[TargetDepth]]
     _poses_average_by_detector_label: dict[str, PoseLocation]
+    _detector_poses: list[Pose]
 
     _minimum_marker_age_before_removal_seconds: float
 
@@ -183,6 +184,7 @@ class BoardBuilderPoseSolver:
         self._poses_by_detector_label = dict()
         self._target_depths_by_target_depth_key = dict()
         self._poses_average_by_detector_label = dict()
+        self._detector_poses = list()
 
         self._minimum_marker_age_before_removal_seconds = max([
             self._parameters.POSE_DETECTOR_DENOISE_LIMIT_AGE_SECONDS,
@@ -247,8 +249,8 @@ class BoardBuilderPoseSolver:
     ) -> None:
         self._intrinsics_by_detector_label[detector_label] = intrinsic_parameters
 
-    def set_detector_poses(self, detector_poses_by_label):
-        self._poses_average_by_detector_label = detector_poses_by_label
+    def set_detector_poses(self, detector_poses):
+        self._detector_poses = detector_poses
 
     def set_board_marker_size(self, board_marker_size):
         self._board_marker_size = board_marker_size
@@ -503,10 +505,12 @@ class BoardBuilderPoseSolver:
             if marker_key in self._marker_rayset_by_marker_key:
                 if self._marker_rayset_by_marker_key[marker_key].image_timestamp > image_timestamp:
                     continue  # A newer timestamp was found in this iteration. Skip the older one.
-            detector_to_reference_matrix: Matrix4x4 = self._poses_average_by_detector_label[image_point_set.detector_label].get_pose().object_to_reference_matrix
-            self._marker_rayset_by_marker_key[marker_key] = self._calculate_marker_ray_set(
-                image_point_set=image_point_set,
-                detector_to_reference_matrix=detector_to_reference_matrix)
+            for pose in self._detector_poses:
+                if pose.target_id == image_point_set.detector_label:
+                    detector_to_reference_matrix: Matrix4x4 = pose.object_to_reference_matrix
+                    self._marker_rayset_by_marker_key[marker_key] = self._calculate_marker_ray_set(
+                        image_point_set=image_point_set,
+                        detector_to_reference_matrix=detector_to_reference_matrix)
 
         # Create a dictionary that maps marker ID's to a list of *recent* rays
         ray_sets_by_marker_id: dict[int, list[MarkerRaySet]] = dict()

@@ -31,7 +31,7 @@ class PoseLocation:
         self.__TMatrix[:3, :3] = avg_rotation
         self.__TMatrix[:3, 3] = avg_translation
 
-    def get_matrix(self): #TODO: Remove
+    def get_matrix(self):
         return self.__TMatrix
 
     def get_pose(self):

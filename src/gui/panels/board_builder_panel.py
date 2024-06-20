@@ -1,7 +1,6 @@
 import cv2
-import uuid
 import logging
-from typing import Final, Optional
+from typing import Final
 import wx
 import wx.grid
 from cv2 import aruco
@@ -9,15 +8,14 @@ import datetime
 
 from .base_panel import BasePanel
 from .feedback import ImagePanel
-from .parameters import ParameterSpinboxFloat, ParameterSpinboxInteger
+from .parameters import ParameterSpinboxFloat
 
 from src.board_builder import BoardBuilder
-from src.common.structures import IntrinsicParameters, Matrix4x4, PoseSolverFrame, Pose
+from src.common.structures import IntrinsicParameters, PoseSolverFrame, Pose
 from src.connector import Connector
 from src.common import (
     StatusMessageSource
 )
-from .pose_solver_panel import POSE_REPRESENTATIVE_MODEL
 from .specialized import \
     GraphicsRenderer
 
@@ -251,18 +249,8 @@ class BoardBuilderPanel(BasePanel):
         self.board_builder = BoardBuilder(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
 
     def _render_pose_solver_frame(self, detector_poses, target_poses):
-        detector_poses_list = []
-
-        for detector in detector_poses:
-            pose = self.board_builder.detector_poses[detector].get_pose()
-            detector_poses_list.append(Pose(
-                target_id=pose.target_id,
-                object_to_reference_matrix=pose.object_to_reference_matrix,
-                solver_timestamp_utc_iso8601=pose.solver_timestamp_utc_iso8601
-            ))
-
         pose_solver_frame = PoseSolverFrame(
-            detector_poses=detector_poses_list,
+            detector_poses=detector_poses,
             target_poses=target_poses,
             timestamp_utc_iso8601=str(datetime.datetime.now())
         )
@@ -290,8 +278,6 @@ class BoardBuilderPanel(BasePanel):
 
     def update_loop(self) -> None:
         super().update_loop()
-
-        now_timestamp = datetime.datetime.now()
 
         if self._renderer is not None:
             self._renderer.render()

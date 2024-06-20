@@ -13,7 +13,8 @@ class BoardBuilder:
         self.DETECTOR_GREEN_INTRINSICS = detectors_intrinsics  #TODO: Should be a list of detector intrinsics
 
         ### POSE SOLVER INIT ###
-        self.detector_poses = {}
+        self._detector_poses_average = {}
+        self.detector_poses = []
         self.target_poses = []
         self.occluded_poses = []
         self._visible_markers = []
@@ -124,10 +125,18 @@ class BoardBuilder:
                 self.pose_solver.add_marker_corners([marker_corners])
 
             new_detector_poses = self.pose_solver.get_detector_poses()
+            self.detector_poses = [] #TODO:MOVE ?
             for pose in new_detector_poses:
-                if pose.target_id not in self.detector_poses:
-                    self.detector_poses[pose.target_id] = PoseLocation(pose.target_id)
-                self.detector_poses[pose.target_id].add_matrix(np.array(pose.object_to_reference_matrix.values).reshape(4, 4), str(datetime.datetime.now())) # TODO: Timestamp
+                if pose.target_id not in self._detector_poses_average:
+                    self._detector_poses_average[pose.target_id] = PoseLocation(pose.target_id)
+                self._detector_poses_average[pose.target_id].add_matrix(np.array(pose.object_to_reference_matrix.values).reshape(4, 4), str(datetime.datetime.now())) # TODO: Timestamp
+            for label in self._detector_poses_average:
+                pose = Pose(
+                    target_id=label,
+                    object_to_reference_matrix=self._detector_poses_average[label].get_pose().object_to_reference_matrix,
+                    solver_timestamp_utc_iso8601=str(datetime.datetime.now())
+                )
+                self.detector_poses.append(pose)
             self.pose_solver.set_detector_poses(self.detector_poses)
 
     def collect_data(self, ids, corners):
