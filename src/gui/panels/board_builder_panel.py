@@ -270,11 +270,11 @@ class BoardBuilderPanel(BasePanel):
         aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_100)
         parameters = aruco.DetectorParameters()
         detector = aruco.ArucoDetector(aruco_dict, parameters)
-        corners, ids, rejectedImgPoints = detector.detectMarkers(frame)
+        corners, ids, _ = detector.detectMarkers(frame)
         aruco.drawDetectedMarkers(frame, corners, ids)
 
         if self._setting_reference:
-            self.board_builder.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
+            self.board_builder.pose_solver.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
             self.board_builder.locate_reference_markers(ids, corners)
 
         elif self._collecting_data:

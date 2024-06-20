@@ -96,16 +96,6 @@ class BoardBuilderAPI(MCastComponent):
         return corners_dict
 
     # TODO: Implement this
-    def set_intrinsic_parameters(self, **kwargs) -> EmptyResponse | ErrorResponse:
-        request: SetIntrinsicParametersRequest = get_kwarg(
-            kwargs=kwargs,
-            key="request",
-            arg_type=SetIntrinsicParametersRequest)
-        self._board_builder.set_intrinsic_parameters(
-            detector_label=request.detector_label,
-            intrinsic_parameters=request.intrinsic_parameters)
-        return EmptyResponse()
-
     def start_board_builder(self, **_kwargs) -> EmptyResponse:
         self._status.solve_status = BoardBuilderStatus.Build.RUNNING
         return EmptyResponse()

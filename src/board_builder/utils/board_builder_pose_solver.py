@@ -205,14 +205,13 @@ class BoardBuilderPoseSolver:
     def add_target_marker(
             self,
             marker_id: int,
-            marker_diameter: float
     ) -> bool:
         for target_id, target in self._targets.items():
             if isinstance(target, TargetMarker) and marker_id == target.marker_id:
                 return False
         target: Target = TargetMarker(
             marker_id=marker_id,
-            marker_size=marker_diameter)
+            marker_size=self._board_marker_size)
         target_id: uuid.UUID = uuid.uuid4()
         self._targets[target_id] = target
         return True
