@@ -268,10 +268,10 @@ class BoardBuilderPanel(BasePanel):
             self.timer.Stop()
             return
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        aruco_dict = aruco.Dictionary_get(aruco.DICT_4X4_100)
-        parameters = aruco.DetectorParameters_create()
-        corners, ids, rejectedImgPoints = aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
+        aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_100)
+        parameters = aruco.DetectorParameters()
+        detector = aruco.ArucoDetector(aruco_dict, parameters)
+        corners, ids, rejectedImgPoints = detector.detectMarkers(frame)
         aruco.drawDetectedMarkers(frame, corners, ids)
 
         if self._setting_reference:
