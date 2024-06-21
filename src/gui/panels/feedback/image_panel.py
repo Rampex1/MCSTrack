@@ -20,6 +20,7 @@ class ImagePanel(wx.Panel):
     ):
         device_context = wx.PaintDC(self)
         self.render(device_context=device_context)
+        self.render(device_context=device_context)
 
     def paint(
         self

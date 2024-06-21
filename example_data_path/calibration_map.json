@@ -1,0 +1,75 @@
+{
+    "entries": [
+        {
+            "key": {
+                "detector_serial_identifier": "d",
+                "image_resolution": {
+                    "x_px": 640,
+                    "y_px": 480
+                }
+            },
+            "value": {
+                "image_metadata_list": [
+                    {
+                        "identifier": "e642185d-0919-475f-a107-f44b42593508",
+                        "label": "",
+                        "timestamp_utc": "2024-06-21 13:39:42.178879",
+                        "state": 1
+                    },
+                    {
+                        "identifier": "986264d8-6919-4de2-9e49-2f7577646c1a",
+                        "label": "",
+                        "timestamp_utc": "2024-06-21 13:39:44.714845",
+                        "state": 1
+                    },
+                    {
+                        "identifier": "91c7b53f-c61a-4b7d-adc9-d92419a654cf",
+                        "label": "",
+                        "timestamp_utc": "2024-06-21 13:39:46.458855",
+                        "state": 1
+                    },
+                    {
+                        "identifier": "e456c72e-9ef9-4bed-aca8-b405cfe8a79f",
+                        "label": "",
+                        "timestamp_utc": "2024-06-21 13:39:48.664798",
+                        "state": 1
+                    },
+                    {
+                        "identifier": "e076e916-bef0-4de4-9846-ecb7fe8d157e",
+                        "label": "",
+                        "timestamp_utc": "2024-06-21 13:39:53.569731",
+                        "state": 1
+                    }
+                ],
+                "result_metadata_list": [
+                    {
+                        "identifier": "8fb9fd47-3109-43c9-b57b-de22dcc2edb1",
+                        "label": "",
+                        "timestamp_utc": "2024-06-21 13:40:01.439028",
+                        "image_identifiers": [
+                            "e642185d-0919-475f-a107-f44b42593508",
+                            "986264d8-6919-4de2-9e49-2f7577646c1a",
+                            "91c7b53f-c61a-4b7d-adc9-d92419a654cf",
+                            "e456c72e-9ef9-4bed-aca8-b405cfe8a79f",
+                            "e076e916-bef0-4de4-9846-ecb7fe8d157e"
+                        ],
+                        "state": 0
+                    },
+                    {
+                        "identifier": "a7daca75-6df5-4191-8b80-7ffe0b9d172e",
+                        "label": "",
+                        "timestamp_utc": "2024-06-21 13:47:25.189458",
+                        "image_identifiers": [
+                            "e642185d-0919-475f-a107-f44b42593508",
+                            "986264d8-6919-4de2-9e49-2f7577646c1a",
+                            "91c7b53f-c61a-4b7d-adc9-d92419a654cf",
+                            "e456c72e-9ef9-4bed-aca8-b405cfe8a79f",
+                            "e076e916-bef0-4de4-9846-ecb7fe8d157e"
+                        ],
+                        "state": 0
+                    }
+                ]
+            }
+        }
+    ]
+}

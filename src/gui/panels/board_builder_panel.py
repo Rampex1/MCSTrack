@@ -11,11 +11,12 @@ from .feedback import ImagePanel
 from .parameters import ParameterSpinboxFloat
 
 from src.board_builder import BoardBuilder
-from src.common.structures import IntrinsicParameters, PoseSolverFrame, Pose
+from src.common.structures import IntrinsicParameters, PoseSolverFrame, Pose, Matrix4x4
 from src.connector import Connector
 from src.common import (
     StatusMessageSource
 )
+from .pose_solver_panel import POSE_REPRESENTATIVE_MODEL
 from .specialized import \
     GraphicsRenderer
 
@@ -191,8 +192,8 @@ class BoardBuilderPanel(BasePanel):
         horizontal_split_sizer.Add(
             window=self._renderer,
             flags=wx.SizerFlags(65).Expand())
-        #self._renderer.load_models_into_context_from_data_path()
-        #self._renderer.add_scene_object("coordinate_axes", Matrix4x4())
+        self._renderer.load_models_into_context_from_data_path()
+        self._renderer.add_scene_object("coordinate_axes", Matrix4x4())
 
         self.SetSizerAndFit(sizer=horizontal_split_sizer)
 
@@ -240,8 +241,8 @@ class BoardBuilderPanel(BasePanel):
             target_poses=target_poses,
             timestamp_utc_iso8601=str(datetime.datetime.now())
         )
+
         ### RENDERER ###
-        """
         self._tracked_target_poses.clear()
         if self._renderer is not None:
             self._latest_pose_solver_frames['default_camera'] = pose_solver_frame
@@ -260,17 +261,16 @@ class BoardBuilderPanel(BasePanel):
                     self._renderer.add_scene_object(
                         model_key=POSE_REPRESENTATIVE_MODEL,
                         transform_to_world=pose.object_to_reference_matrix)
-        """
 
     def update_loop(self) -> None:
         # TODO: 2 Two cameras
         super().update_loop()
 
-        if self._renderer is not None:
-            self._renderer.render()
-
         if self.cap is None or not self.cap.isOpened():
             return
+
+        if self._renderer is not None:
+            self._renderer.render()
 
         ret, frame = self.cap.read()
         if not ret:
@@ -278,10 +278,10 @@ class BoardBuilderPanel(BasePanel):
             self.timer.Stop()
             return
 
-        aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_100)
-        parameters = aruco.DetectorParameters()
-        detector = aruco.ArucoDetector(aruco_dict, parameters)
-        corners, ids, _ = detector.detectMarkers(frame)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        aruco_dict = aruco.Dictionary_get(aruco.DICT_4X4_100)
+        parameters = aruco.DetectorParameters_create()
+        corners, ids, _ = aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
         aruco.drawDetectedMarkers(frame, corners, ids)
 
         if self._setting_reference:
@@ -318,7 +318,7 @@ class BoardBuilderPanel(BasePanel):
 
     def on_open_camera_button_click(self, event: wx.CommandEvent) -> None:
         # Logic to open the camera goes here
-        self.cap = cv2.VideoCapture(0)
+        self.cap = cv2.VideoCapture(1)
         if not self.cap.isOpened():
             wx.MessageBox("Cannot open camera", "Error", wx.OK | wx.ICON_ERROR)
             return
@@ -331,7 +331,7 @@ class BoardBuilderPanel(BasePanel):
             self.timer.Stop()
             self.cap.release()
             self.cap = None
-            self._image_panel.set_bitmap(wx.Bitmap())
+            self._image_panel.set_bitmap(wx.Bitmap(1, 1))
             self.Refresh()
 
     def on_locate_reference_button_click(self, event: wx.CommandEvent) -> None:

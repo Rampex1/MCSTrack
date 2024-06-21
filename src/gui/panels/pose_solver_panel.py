@@ -211,8 +211,8 @@ class PoseSolverPanel(BasePanel):
             horizontal_split_sizer.Add(
                 window=self._renderer,
                 flags=wx.SizerFlags(65).Expand())
-            #self._renderer.load_models_into_context_from_data_path()
-            #self._renderer.add_scene_object("coordinate_axes", Matrix4x4())
+            self._renderer.load_models_into_context_from_data_path()
+            self._renderer.add_scene_object("coordinate_axes", Matrix4x4())
 
         self.SetSizerAndFit(sizer=horizontal_split_sizer)
 
