@@ -155,7 +155,7 @@ class BoardBuilderPanel(BasePanel):
             label="Locate Reference"
         )
 
-        self._collect_data_button: wx.Button = self.add_control_button(
+        self._collect_data_button: wx.ToggleButton = self.add_toggle_button(
             parent=control_panel,
             sizer=control_sizer,
             label="Collect Data"
@@ -209,7 +209,7 @@ class BoardBuilderPanel(BasePanel):
             event=wx.EVT_TOGGLEBUTTON,
             handler=self.on_locate_reference_button_click)
         self._collect_data_button.Bind(
-            event=wx.EVT_BUTTON,
+            event=wx.EVT_TOGGLEBUTTON,
             handler=self.on_collect_data_button_click)
         self._build_board_button.Bind(
             event=wx.EVT_BUTTON,
@@ -348,11 +348,15 @@ class BoardBuilderPanel(BasePanel):
             self._collect_data_button.Enable(True)
 
     def on_collect_data_button_click(self, event: wx.CommandEvent) -> None:
-        # TODO: 1 Toggle
-        self._build_board_button.Enable(True)
-        self._setting_reference = False
-        self._collecting_data = True
-        self._building_board = False
+        if self._collect_data_button.GetValue():
+            self._collect_data_button.SetLabel("Stop Collect Data")
+            self._build_board_button.Enable(True)
+            self._setting_reference = False
+            self._collecting_data = True
+            self._building_board = False
+        else:
+            self._collect_data_button.SetLabel("Collect Data")
+            self._collecting_data = False
 
     def on_build_board_button_click(self, event: wx.CommandEvent) -> None:
         self._setting_reference = False
