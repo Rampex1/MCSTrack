@@ -39,9 +39,23 @@ class BoardBuilderPanel(BasePanel):
     _tracked_target_poses: list[Pose]
     _latest_pose_solver_frames: dict[str, PoseSolverFrame]
 
-    # TODO: 3 This will be determined from calibration
-    DETECTOR_GREEN_NAME: Final[str] = "default_camera"
+    # TODO: This will be determined by calibration
+    DETECTOR_GREEN_NAME: Final[str] = "detector_green"
     DETECTOR_GREEN_INTRINSICS: Final[IntrinsicParameters] = IntrinsicParameters(
+        focal_length_x_px=629.7257712407858,
+        focal_length_y_px=631.1144336572407,
+        optical_center_x_px=327.78473901724755,
+        optical_center_y_px=226.74054836282653,
+        radial_distortion_coefficients=[
+            0.05560270909494751,
+            -0.28733139601291297,
+            1.182627063988894],
+        tangential_distortion_coefficients=[
+            -0.00454124371092251,
+            0.0009635939551320261])
+
+    DETECTOR_BLUE_NAME: Final[str] = "detector_blue"
+    DETECTOR_BLUE_INTRINSICS: Final[IntrinsicParameters] = IntrinsicParameters(
         focal_length_x_px=629.7257712407858,
         focal_length_y_px=631.1144336572407,
         optical_center_x_px=327.78473901724755,
@@ -70,12 +84,28 @@ class BoardBuilderPanel(BasePanel):
         self._connector = connector
 
         self.cap = None
+        self.cap1 = None  # Second camera capture
         self.timer = wx.Timer(self)
-        self._setting_reference = False
+        self._locating_reference = False
         self._collecting_data = False
         self._building_board = False
 
-        self.board_builder = BoardBuilder(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)
+        self._tracked_target_poses = list()
+        self._latest_pose_solver_frames = dict()
+        self._detector_data = {
+            self.DETECTOR_GREEN_NAME: {
+                "ids": None,
+                "corners": None,
+                "intrinsics": self.DETECTOR_GREEN_INTRINSICS
+            },
+            self.DETECTOR_BLUE_NAME: {
+                "ids": None,
+                "corners": None,
+                "intrinsics": self.DETECTOR_BLUE_INTRINSICS
+            }
+        }
+
+        self.board_builder = BoardBuilder()
         self._marker_size = 0
         self.marker_color = [
             (0, 0, 255),  # Red
@@ -84,16 +114,14 @@ class BoardBuilderPanel(BasePanel):
             (0, 255, 255),  # Cyan
         ]
 
-        self._tracked_target_poses = list()
-        self._latest_pose_solver_frames = dict()
-
         ### USER INTERFACE FUNCTIONALITIES AND BUTTONS ###
-        horizontal_split_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.HORIZONTAL)
+        horizontal_split_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.HORIZONTAL)  # Changed from HORIZONTAL to VERTICAL
 
         control_border_panel: wx.Panel = wx.Panel(parent=self)
         control_border_box: wx.StaticBoxSizer = wx.StaticBoxSizer(
-            orient=wx.VERTICAL,
-            parent=control_border_panel)
+            wx.VERTICAL,
+            control_border_panel,
+            label="Control Panel")
         control_panel: wx.ScrolledWindow = wx.ScrolledWindow(
             parent=control_border_panel)
         control_panel.SetScrollRate(
@@ -174,29 +202,39 @@ class BoardBuilderPanel(BasePanel):
 
         control_panel.SetSizerAndFit(sizer=control_sizer)
         control_border_box.Add(
-            window=control_panel,
-            flags=wx.SizerFlags(1).Expand())
+            control_panel,
+            proportion=1,
+            flag=wx.EXPAND)
 
-        control_border_panel.SetSizer(sizer=control_border_box)
+        control_border_panel.SetSizer(control_border_box)
         horizontal_split_sizer.Add(
-            window=control_border_panel,
-            flags=wx.SizerFlags(35).Expand())
+            control_border_panel,
+            proportion=1,
+            flag=wx.EXPAND)
 
-        self._image_panel = ImagePanel(parent=self)
-        self._image_panel.SetBackgroundColour(colour=wx.BLACK)
+        camera_split_sizer: wx.BoxSizer = wx.BoxSizer(orient=wx.VERTICAL)  # New sizer for two camera frames
+        self._image_panel0 = ImagePanel(parent=self)  # Top camera frame (Camera 0)
+        self._image_panel0.SetBackgroundColour(colour=wx.BLACK)
+        camera_split_sizer.Add(self._image_panel0, proportion=1, flag=wx.EXPAND)
+
+        self._image_panel1 = ImagePanel(parent=self)  # Bottom camera frame (Camera 1)
+        self._image_panel1.SetBackgroundColour(colour=wx.BLACK)
+        camera_split_sizer.Add(self._image_panel1, proportion=1, flag=wx.EXPAND)
+
         horizontal_split_sizer.Add(
-            window=self._image_panel,
-            flags=wx.SizerFlags(65).Expand())
+            camera_split_sizer,
+            proportion=1,
+            flag=wx.EXPAND)  # Added new sizer to the main sizer
 
         self._renderer = GraphicsRenderer(parent=self)
         horizontal_split_sizer.Add(
-            window=self._renderer,
-            flags=wx.SizerFlags(65).Expand())
+            self._renderer,
+            proportion=1,
+            flag=wx.EXPAND)  # Adjusted flag value to balance the new layout
         self._renderer.load_models_into_context_from_data_path()
         self._renderer.add_scene_object("coordinate_axes", Matrix4x4())
 
         self.SetSizerAndFit(sizer=horizontal_split_sizer)
-
 
         ### EVENT HANDLING ###
         self._confirm_marker_size_button.Bind(
@@ -230,12 +268,12 @@ class BoardBuilderPanel(BasePanel):
         self._locate_reference_button.Enable(False)
         self._collect_data_button.Enable(False)
         self._build_board_button.Enable(False)
-        self._setting_reference = False
+        self._locating_reference = False
         self._collecting_data = False
         self._building_board = False
-        self.board_builder = BoardBuilder(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)  # TODO: 3 Calibration
+        self.board_builder = BoardBuilder()
 
-    def _render_pose_solver_frame(self, detector_poses, target_poses):
+    def _render_frame(self, detector_poses, target_poses):
         pose_solver_frame = PoseSolverFrame(
             detector_poses=detector_poses,
             target_poses=target_poses,
@@ -245,7 +283,7 @@ class BoardBuilderPanel(BasePanel):
         ### RENDERER ###
         self._tracked_target_poses.clear()
         if self._renderer is not None:
-            self._latest_pose_solver_frames['default_camera'] = pose_solver_frame
+            self._latest_pose_solver_frames['pose_solver_label'] = pose_solver_frame
             self._renderer.clear_scene_objects()
             self._renderer.add_scene_object(  # Reference
                 model_key=POSE_REPRESENTATIVE_MODEL,
@@ -262,52 +300,70 @@ class BoardBuilderPanel(BasePanel):
                         model_key=POSE_REPRESENTATIVE_MODEL,
                         transform_to_world=pose.object_to_reference_matrix)
 
+
     def update_loop(self) -> None:
-        # TODO: 2 Two cameras
+        # Existing super call
         super().update_loop()
 
-        if self.cap is None or not self.cap.isOpened():
+        # Capture frames from both cameras
+        if (self.cap is None or not self.cap.isOpened()) or (self.cap1 is None or not self.cap1.isOpened()):
             return
 
         if self._renderer is not None:
             self._renderer.render()
 
-        ret, frame = self.cap.read()
-        if not ret:
-            wx.MessageBox("Failed to get frame from camera", "Error", wx.OK | wx.ICON_ERROR)
+        ret0, frame0 = self.cap.read()
+        ret1, frame1 = self.cap1.read()
+
+        if not ret0 or not ret1:
+            wx.MessageBox("Failed to get frame from one or both cameras", "Error", wx.OK | wx.ICON_ERROR)
             self.timer.Stop()
             return
 
+        self.process_frame(frame0, self.DETECTOR_GREEN_NAME, self._image_panel0)
+        self.process_frame(frame1, self.DETECTOR_BLUE_NAME, self._image_panel1)
+
+        self.Refresh()
+
+    def process_frame(self, frame, detector_name, image_panel):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         aruco_dict = aruco.Dictionary_get(aruco.DICT_4X4_100)
         parameters = aruco.DetectorParameters_create()
         corners, ids, _ = aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
         aruco.drawDetectedMarkers(frame, corners, ids)
 
-        if self._setting_reference:
-            self.board_builder.pose_solver.set_intrinsic_parameters(self.DETECTOR_GREEN_NAME, self.DETECTOR_GREEN_INTRINSICS)  # TODO: 3 Calibration
-            self.board_builder.locate_reference_markers(ids, corners)
+        if ids is not None and corners is not None:
+            reformatted_ids = [single_id[0] for single_id in ids]
+            reformatted_corners = [corner[0] for corner in corners]
+            self._detector_data[detector_name]['ids'] = reformatted_ids
+            self._detector_data[detector_name]['corners'] = reformatted_corners
+
+        if self._locating_reference:
+            for detector_name in self._detector_data:
+                self.board_builder.pose_solver.set_intrinsic_parameters(detector_name, self._detector_data[detector_name]["intrinsics"])
+            self.board_builder.locate_reference_markers(self._detector_data)
 
         elif self._collecting_data:
-            if ids is not None:
-                corners_dict = self.board_builder.collect_data(ids, corners)
+            if (self._detector_data[self.DETECTOR_GREEN_NAME]['ids'] is not None or
+                    self._detector_data[self.DETECTOR_BLUE_NAME]['ids'] is not None):
+                corners_dict = self.board_builder.collect_data(self._detector_data)
+                # TODO: We want to draw different markers for each frame
                 self.draw_all_corners(corners_dict, frame)
-
-                self._render_pose_solver_frame(self.board_builder.detector_poses, self.board_builder.target_poses)
+                self._render_frame(self.board_builder.detector_poses, self.board_builder.target_poses)
 
         elif self._building_board:
-            if ids is not None:
-                corners_dict = self.board_builder.build_board(ids, corners)
+            if (self._detector_data[self.DETECTOR_GREEN_NAME]['ids'] is not None or
+                    self._detector_data[self.DETECTOR_BLUE_NAME]['ids'] is not None):
+                corners_dict = self.board_builder.build_board(self._detector_data)
+                # TODO: We want to draw different markers for each frame
                 self.draw_all_corners(corners_dict, frame)
-
-                self._render_pose_solver_frame(self.board_builder.detector_poses, self.board_builder.target_poses +
-                                               self.board_builder.occluded_poses)
+                self._render_frame(self.board_builder.detector_poses,
+                                               self.board_builder.target_poses + self.board_builder.occluded_poses)
 
         height, width = frame.shape[:2]
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         bitmap = wx.Bitmap.FromBuffer(width, height, frame_rgb)
-        self._image_panel.set_bitmap(bitmap)
-        self.Refresh()
+        image_panel.set_bitmap(bitmap)
 
     ### MAIN BUTTONS ###
     def on_confirm_marker_size_pressed(self, _event: wx.CommandEvent) -> None:
@@ -317,21 +373,26 @@ class BoardBuilderPanel(BasePanel):
         self._close_camera_button.Enable(True)
 
     def on_open_camera_button_click(self, event: wx.CommandEvent) -> None:
-        # Logic to open the camera goes here
         self.cap = cv2.VideoCapture(1)
-        if not self.cap.isOpened():
-            wx.MessageBox("Cannot open camera", "Error", wx.OK | wx.ICON_ERROR)
+        self.cap1 = cv2.VideoCapture(2)
+        if not self.cap.isOpened() or not self.cap1.isOpened():
+            wx.MessageBox("Cannot open one or both cameras", "Error", wx.OK | wx.ICON_ERROR)
             return
         self.timer.Start(1000 // 30)
         self._locate_reference_button.Enable(True)
 
     def on_close_camera_button_click(self, event: wx.CommandEvent) -> None:
         self._reset()
-        if self.cap is not None and self.cap.isOpened():
+        if (self.cap is not None and self.cap.isOpened()) or (self.cap1 is not None and self.cap1.isOpened()):
             self.timer.Stop()
-            self.cap.release()
-            self.cap = None
-            self._image_panel.set_bitmap(wx.Bitmap(1, 1))
+            if self.cap is not None:
+                self.cap.release()
+                self.cap = None
+            if self.cap1 is not None:
+                self.cap1.release()
+                self.cap1 = None
+            self._image_panel0.set_bitmap(wx.Bitmap(1, 1))
+            self._image_panel1.set_bitmap(wx.Bitmap(1, 1))
             self.Refresh()
 
     def on_locate_reference_button_click(self, event: wx.CommandEvent) -> None:
@@ -339,19 +400,19 @@ class BoardBuilderPanel(BasePanel):
             self._locate_reference_button.SetLabel("Stop Locate Reference")
             self._locate_reference_button.Enable(True)
             self._collect_data_button.Enable(False)
-            self._setting_reference = True
+            self._locating_reference = True
             self._collecting_data = False
             self._building_board = False
         else:
             self._locate_reference_button.SetLabel("Locate Reference")
-            self._setting_reference = False
+            self._locating_reference = False
             self._collect_data_button.Enable(True)
 
     def on_collect_data_button_click(self, event: wx.CommandEvent) -> None:
         if self._collect_data_button.GetValue():
             self._collect_data_button.SetLabel("Stop Collect Data")
             self._build_board_button.Enable(True)
-            self._setting_reference = False
+            self._locating_reference = False
             self._collecting_data = True
             self._building_board = False
         else:
@@ -372,4 +433,4 @@ class BoardBuilderPanel(BasePanel):
             marker_color = self.marker_color[color_index]
             for corner in corners_location:
                 x, y, z = corner
-                cv2.circle(frame, (int(x) + 200, -int(y) + 200), 4, marker_color, -1)
+                cv2.circle(frame, (int(x) + 300, -int(y) + 300), 4, marker_color, -1)
