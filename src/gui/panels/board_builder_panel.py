@@ -299,7 +299,12 @@ class BoardBuilderPanel(BasePanel):
                     self._renderer.add_scene_object(
                         model_key=POSE_REPRESENTATIVE_MODEL,
                         transform_to_world=pose.object_to_reference_matrix)
-
+            for pose in live_pose_solver.detector_poses:
+                self._tracked_target_poses.append(pose)
+                if self._renderer is not None:
+                    self._renderer.add_scene_object(
+                        model_key=POSE_REPRESENTATIVE_MODEL,
+                        transform_to_world=pose.object_to_reference_matrix)
 
     def update_loop(self) -> None:
         # Existing super call
