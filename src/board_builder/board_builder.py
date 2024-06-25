@@ -14,7 +14,7 @@ class BoardBuilder:
     _visible_markers: list[str]
     _index_to_marker_uuid: dict[int, str]
 
-    _relative_pose_matrix = list[list[int]]
+    _relative_pose_matrix = list[list[PoseLocation]]
     _local_corners = list[list[int]]
 
     def __init__(self):
@@ -128,7 +128,6 @@ class BoardBuilder:
 
     ### PUBLIC METHOD ###
     def locate_reference_markers(self, detector_data):
-
         markers_visible = False
         for detector_name in detector_data:
             if detector_data[detector_name]['ids'] is not None:
@@ -198,7 +197,7 @@ class BoardBuilder:
 
     def build_board(self, detector_data):
         """ Builds board using the relative matrix"""
-
+        print(self._relative_pose_matrix)
         corners_dict = {}
         self.occluded_poses = []
         self._solve_pose(detector_data)
