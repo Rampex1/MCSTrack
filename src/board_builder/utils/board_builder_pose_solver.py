@@ -560,7 +560,6 @@ class BoardBuilderPoseSolver:
                     rays.append(Ray(
                         source_point=ray_set.ray_origin_reference,
                         direction=ray_set.ray_directions_reference[corner_index]))
-                ################################################################################################################################
                 intersection_result = closest_intersection_between_n_lines(
                     rays=rays,
                     maximum_distance=self._parameters.INTERSECTION_MAXIMUM_DISTANCE)
@@ -770,3 +769,4 @@ class BoardBuilderPoseSolver:
             image_point_set_keys_with_reference_visible.append(image_point_sets_key)
 
         return image_point_sets_by_image_key, image_point_set_keys_with_reference_visible
+

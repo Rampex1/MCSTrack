@@ -1,0 +1,36 @@
+TABLE:
+
+Length: 1000mm (1m) along the x-axis.
+The table is considered to be lying flat on the x-y plane with its center at (500, 0, 0).
+Detectors:
+
+DETECTORS:
+
+There are two detectors, one placed at each end of the table.
+Detector A is located at the coordinates (0, 0, 500) meters.
+Detector B is located at the coordinates (1000, 0, 500) meters.
+Both detectors are 500 mm (0.5 m) above the table.
+
+DETECTOR ORIENTATION:
+Both detectors are oriented such that their fields of view (FOV) are centered in the middle of the table at (500, 0, 0) mm.
+The detectors are angled downwards at 45 degrees towards the table's center.
+
+DETECTOR A COORDINATE SYSTEM:
+T = [
+    [ 0, -1 / (2 ** 0.5),  1 / (2 ** 0.5), -500],
+    [-1,           0,            0,           0],
+    [ 0, -1 / (2 ** 0.5), -1 / (2 ** 0.5),  500],
+    [ 0,           0,            0,           1]
+]
+
+DETECTOR B COORDINATE SYSTEM:
+T = [
+    [ 0,  1 / (2 ** 0.5), -1 / (2 ** 0.5), 1000],
+    [ 1,              0,              0,    0],
+    [ 0, -1 / (2 ** 0.5), -1 / (2 ** 0.5),  500],
+    [ 0,              0,              0,    1]
+]
+
+TODO: Get correct detector coordinate system
+      Get corners in detector frame
+      Run algorithm

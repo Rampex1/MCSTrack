@@ -1,0 +1,15 @@
+ARUCO MARKERS:
+Marker ID 0: Center located 50 mm to the left of the table center on the x-axis (450 mm, 0, 0).
+Marker ID 1: Center located 50 mm to the right of the table center on the x-axis (550 mm, 0, 0).
+
+Marker ID 0:
+Top-left: (445 mm, 5 mm, 0)
+Top-right: (455 mm, 5 mm, 0)
+Bottom-right: (455 mm, -5 mm, 0)
+Bottom-left: (445 mm, -5 mm, 0)
+
+Marker ID 1:
+Top-left: (545 mm, 5 mm, 0)
+Top-right: (555 mm, 5 mm, 0)
+Bottom-right: (555 mm, -5 mm, 0)
+Bottom-left: (545 mm, -5 mm, 0)

@@ -1,7 +1,10 @@
 import numpy as np
 from numpy import array
 
-from src.common.structures import IntrinsicParameters
+from src.common.structures import IntrinsicParameters, Pose, Matrix4x4
+
+DETECTOR_POSES = [Pose(target_id='detector_green', object_to_reference_matrix=Matrix4x4(values=[0.996983271458371, 0.039322206895776764, -0.06691876027699552, 84.23483276367188, -0.05280967145795374, 0.9755003627772053, -0.2135654017439244, 18.002531051635742, 0.05688141201365569, 0.21645509064558072, 0.9746341358176135, 270.5406188964844, 0.0, 0.0, 0.0, 1.0]), solver_timestamp_utc_iso8601='2024-06-28 11:54:34.864333'),
+                  Pose(target_id='detector_blue', object_to_reference_matrix=Matrix4x4(values=[0.996983271458371, 0.039322206895776764, -0.06691876027699552, 84.23483276367188, -0.05280967145795374, 0.9755003627772053, -0.2135654017439244, 18.002531051635742, 0.05688141201365569, 0.21645509064558072, 0.9746341358176135, 270.5406188964844, 0.0, 0.0, 0.0, 1.0]), solver_timestamp_utc_iso8601='2024-06-28 11:54:34.864333')]
 
 REFERENCE_DATA = {
     'detector_green': {
@@ -135,7 +138,21 @@ COLLECTION_DATA = {
             np.array([[372., 444.], [351., 443.], [352., 427.], [372., 428.]], dtype=np.float32),
             np.array([[326., 443.], [305., 441.], [308., 427.], [329., 428.]], dtype=np.float32)
         ],
-        'intrinsics': None
+        'intrinsics': IntrinsicParameters(
+            focal_length_x_px=629.7257712407858,
+            focal_length_y_px=631.1144336572407,
+            optical_center_x_px=327.78473901724755,
+            optical_center_y_px=226.74054836282653,
+            radial_distortion_coefficients=[
+                0.05560270909494751,
+                -0.28733139601291297,
+                1.182627063988894
+            ],
+            tangential_distortion_coefficients=[
+                -0.00454124371092251,
+                0.0009635939551320261
+            ]
+        )
     },
     'detector_blue': {
         'ids': [0,1,3],
@@ -145,7 +162,21 @@ COLLECTION_DATA = {
             np.array([[372., 444.], [351., 443.], [352., 427.], [372., 428.]], dtype=np.float32),
             np.array([[326., 443.], [305., 441.], [308., 427.], [329., 428.]], dtype=np.float32)
         ],
-        'intrinsics': None
+        'intrinsics': IntrinsicParameters(
+            focal_length_x_px=629.7257712407858,
+            focal_length_y_px=631.1144336572407,
+            optical_center_x_px=327.78473901724755,
+            optical_center_y_px=226.74054836282653,
+            radial_distortion_coefficients=[
+                0.05560270909494751,
+                -0.28733139601291297,
+                1.182627063988894
+            ],
+            tangential_distortion_coefficients=[
+                -0.00454124371092251,
+                0.0009635939551320261
+            ]
+        )
     }
 }
 
@@ -187,23 +218,3 @@ THEORETICAL_DATA = [
     ])
 ]
 
-WRONG_DATA = [
-    array([
-        [ 45.32519754, 123.45189201, 176.75398123],
-        [ 98.25746892,  67.23981456, 105.76419382],
-        [ 32.18756237,  85.97145283, 147.91826432],
-        [151.24381769, 182.64903184,  92.67132845]
-    ]),
-    array([
-        [198.47120973,  24.57389164,  55.63872931],
-        [111.36475892, 140.19826432,  77.19472865],
-        [ 64.19283746, 199.45327182,  88.17239418],
-        [ 22.34891756, 173.46192573, 109.57438219]
-    ]),
-    array([
-        [ 88.21743987, 122.83745693, 178.34956127],
-        [194.68279135,  54.29381657,  95.21748369],
-        [102.37194826, 136.49287156,  41.93827164],
-        [ 58.29473182,  23.46198473, 199.19482756]
-    ])
-]

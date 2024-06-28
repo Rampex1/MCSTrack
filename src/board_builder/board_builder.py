@@ -160,7 +160,6 @@ class BoardBuilder:
                 )
                 self.detector_poses.append(pose)
             self.pose_solver.set_detector_poses(self.detector_poses)
-            print(self.detector_poses)
 
     def collect_data(self, detector_data):
         """ Collects data of relative position and is entered in matrix. Returns a dictionary of its corners"""
