@@ -87,7 +87,7 @@ class ControllerFrame(wx.Frame):
 
         self._board_builder_panel = BoardBuilderPanel(
             parent=self._notebook,
-            connector=self._connector,
+            controller=self._controller,
             status_message_source=self._status_message_source)
         self._notebook.AddPage(
             page=self._board_builder_panel,
