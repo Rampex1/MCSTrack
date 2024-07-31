@@ -245,6 +245,8 @@ class BoardBuilder:
             else:
                 # Transformation from face i to reference face
                 T = relative_pose_matrix[reference_face][i]
+                if T is None:
+                    continue
                 pose = Pose(
                     target_id=i,
                     object_to_reference_matrix=Matrix4x4.from_numpy_array(np.array(T)),
