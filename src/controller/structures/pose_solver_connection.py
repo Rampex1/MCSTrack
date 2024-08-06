@@ -1,3 +1,4 @@
+from src.common.structures.pose_solver_frame import PoseSolverFrame
 from .mct_component_address import MCTComponentAddress
 from .connection import Connection
 from src.common.api import \
@@ -24,6 +25,7 @@ class PoseSolverConnection(Connection):
     target_poses: list[Pose]
     detector_timestamps: dict[str, datetime.datetime]  # access by detector_label
     poses_timestamp: datetime.datetime
+    recording: list[PoseSolverFrame] | None
 
     def __init__(
         self,
@@ -35,6 +37,7 @@ class PoseSolverConnection(Connection):
         self.target_poses = list()
         self.detector_timestamps = dict()
         self.poses_timestamp = datetime.datetime.min
+        self.recording = []
 
     def create_deinitialization_request_series(self) -> MCTRequestSeries:
         return MCTRequestSeries(series=[PoseSolverStopRequest()])

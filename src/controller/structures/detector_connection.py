@@ -38,6 +38,7 @@ class DetectorConnection(Connection):
     current_resolution: ImageResolution | None
     current_intrinsic_parameters: IntrinsicParameters | None
     latest_frame: DetectorFrame | None
+    recording: list[DetectorFrame] | None
 
     def __init__(
         self,
@@ -48,6 +49,7 @@ class DetectorConnection(Connection):
         self.current_resolution = None
         self.current_intrinsic_parameters = None
         self.latest_frame = None
+        self.recording = []
 
     def create_deinitialization_request_series(self) -> MCTRequestSeries:
         return MCTRequestSeries(series=[DetectorStopRequest()])

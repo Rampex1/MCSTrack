@@ -84,20 +84,20 @@ async def main():
     # Tracked and reference marker should be set via controller config file
     # Set reference marker for pose solver
     request_series: MCTRequestSeries = MCTRequestSeries(series=[
-        PoseSolverAddTargetMarkerRequest(
-                target=TargetMarker(
-                    target_id=0,
-                    marker_id=0,
-                    marker_size=10))])
+        PoseSolverSetReferenceRequest(
+                    marker_id=1,
+                    marker_diameter=10)])
     controller.request_series_push(
         connection_label=pose_solver_label,
         request_series=request_series)
 
     # Set tracked marker for pose solver
     request_series: MCTRequestSeries = MCTRequestSeries(series=[
-        PoseSolverSetReferenceRequest(
-                    marker_id=1,
-                    marker_diameter=10)])
+        PoseSolverAddTargetMarkerRequest(
+                target=TargetMarker(
+                    target_id=0,
+                    marker_id=0,
+                    marker_size=10))])
     controller.request_series_push(
         connection_label=pose_solver_label,
         request_series=request_series)
