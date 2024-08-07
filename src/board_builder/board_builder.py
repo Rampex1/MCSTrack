@@ -47,6 +47,9 @@ class BoardBuilder:
             [marker_size / 2, -marker_size / 2, 0, 1],  # Bottom-right
             [-marker_size / 2, -marker_size / 2, 0, 1]]  # Bottom-left
 
+        # clear data recording file
+        self._clear_data_recording_file()
+
     @staticmethod
     def _calculate_corners_location(
         t_matrix,
@@ -77,6 +80,16 @@ class BoardBuilder:
         t1_inv = np.linalg.inv(t1)
         t_relative = t1_inv @ t2
         return t_relative
+
+    @staticmethod
+    def _clear_data_recording_file():
+        current_dir = os.path.dirname(__file__)
+        file_path = os.path.join(current_dir, 'data_recording.json')
+        file_path = os.path.abspath(file_path)
+
+        # Clear the content of the file
+        with open(file_path, "w") as f:
+            f.write("{}")
 
     def _expand_relative_pose_matrix(self):
         """ Adds one row and one column to the matrix and initializes them to None """
@@ -162,7 +175,7 @@ class BoardBuilder:
         repeatability_dir = os.path.join(script_dir, 'test', 'repeatability')
         if not os.path.exists(repeatability_dir):
             os.makedirs(repeatability_dir)
-        file_path = os.path.join(repeatability_dir, 'data.json')
+        file_path = os.path.join(repeatability_dir, 'board_builder_results.json')
 
         data = []
         if os.path.exists(file_path):
@@ -178,8 +191,48 @@ class BoardBuilder:
         with open(file_path, 'w') as file:
             json.dump(data, file, indent=4)
 
+    @staticmethod
+    def _write_detector_data_to_file(detector_data: dict[str, list[MarkerSnapshot]], data_description: str):
+        formatted_data = {}
+        for detector_name, snapshots in detector_data.items():
+            formatted_data[detector_name] = []
+            for snapshot in snapshots:
+                snapshot_data = {
+                    "label": snapshot.label,
+                    "corner_image_points": [{"x_px": pt.x_px, "y_px": pt.y_px} for pt in snapshot.corner_image_points]
+                }
+                formatted_data[detector_name].append(snapshot_data)
+
+        current_dir = os.path.dirname(__file__)
+        file_path = os.path.join(current_dir, 'data_recording.json')
+        file_path = os.path.abspath(file_path)
+
+        # Read existing data
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                try:
+                    existing_data = json.load(f)
+                except json.JSONDecodeError:
+                    existing_data = {}
+        else:
+            existing_data = {}
+
+        # Determine the next index
+        if existing_data:
+            next_index = max(map(int, existing_data.keys())) + 1
+        else:
+            next_index = 1
+
+        # Update existing data with new data
+        existing_data[next_index] = [{"name": data_description}, {"formatted_data": formatted_data}]
+
+        # Write updated data back to the file
+        with open(file_path, "w") as f:
+            json.dump(existing_data, f, indent=4)
+
     # public methods
     def locate_reference_board(self, detector_data: dict[str, list[MarkerSnapshot]]):
+        self._write_detector_data_to_file(detector_data, "LOCATE REFERENCE DATA")
         if all(isinstance(v, list) and len(v) == 0 for v in detector_data.values()):
             return
         self.detector_poses = []
@@ -214,6 +267,7 @@ class BoardBuilder:
 
     def collect_data(self, detector_data: dict[str, list[MarkerSnapshot]]):
         """ Collects data of relative position and is entered in matrix. Returns a dictionary of its corners"""
+        self._write_detector_data_to_file(detector_data, "COLLECTION DATA")
         detector_data = self._filter_markers_appearing_in_multiple_detectors(detector_data)
         if all(isinstance(v, list) and len(v) == 0 for v in detector_data.values()):
             return
@@ -252,6 +306,7 @@ class BoardBuilder:
             pose_matrix = np.array(pose_values).reshape(4, 4)
             corners_location = self._calculate_corners_location(pose_matrix, self.local_corners)
             corners_dict[pose.target_id] = corners_location
+
         return corners_dict
 
     def build_board(self, repeatability_testing=False):
